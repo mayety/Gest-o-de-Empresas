@@ -19,8 +19,20 @@ interface CulturalConfig {
   streetLabel: string; cityLabel: string; regionLabel: string; stateLabel: string
   hasComplement: boolean; complementLabel: string
 }
+interface Documento {
+  id: string; nome: string
+  tipo: 'pessoal' | 'contrato' | 'recibo' | 'outro'
+  fileName: string; dataUpload: string; fileObj?: File
+}
+interface Colaborador {
+  id: string; nome: string; nif: string; cargo: string; departamento: string
+  email: string; telefone: string; dataAdmissao: string
+  tipoContrato: 'sem-termo' | 'termo-certo' | 'termo-incerto' | 'prestacao-servicos' | 'estagio'
+  morada: { rua: string; numero: string; andar: string; codigoPostal: string; localidade: string; distrito: string }
+  documentos: Documento[]
+}
 
-// ===== CULTURAL CONFIG (apenas o que difere por país) =====
+// ===== CULTURAL CONFIG =====
 const EU_COUNTRIES = new Set(['AT','BE','BG','HR','CY','CZ','DK','EE','FI','FR','DE','GR','HU','IE','IT','LV','LT','LU','MT','NL','PL','PT','RO','SK','SI','ES','SE'])
 
 const DEFAULT_CULTURAL: CulturalConfig = {
@@ -49,7 +61,19 @@ function getConfig(code: string): CulturalConfig & { isEU: boolean } {
   return { ...DEFAULT_CULTURAL, ...CULTURAL_MAP[code], isEU: EU_COUNTRIES.has(code) }
 }
 
-// ===== FALLBACK (exibido enquanto a API carrega) =====
+// ===== COLABORADORES — constantes =====
+const CONTRATO_LABELS: Record<string, string> = {
+  'sem-termo': 'Sem Termo', 'termo-certo': 'Termo Certo', 'termo-incerto': 'Termo Incerto',
+  'prestacao-servicos': 'Prestação de Serviços', 'estagio': 'Estágio',
+}
+const DOC_TIPO_ICONS: Record<string, string> = {
+  pessoal: '🪪', contrato: '📄', recibo: '💰', outro: '📎',
+}
+const DOC_TIPO_LABELS: Record<string, string> = {
+  pessoal: 'Pessoal', contrato: 'Contrato', recibo: 'Recibo', outro: 'Outro',
+}
+
+// ===== FALLBACK =====
 const FALLBACK_COUNTRIES: CountryItem[] = [
   { code: 'PT', name: 'Portugal', flag: '🇵🇹', phone: '+351' },
   { code: 'BR', name: 'Brasil', flag: '🇧🇷', phone: '+55' },
@@ -89,7 +113,6 @@ async function lookupPostal(cp: string, country: string) {
       if (d.erro) return null
       return { city: d.localidade || '', state: d.uf || '', region: d.bairro || '', street: d.logradouro || '' }
     }
-    // Fallback universal: Nominatim (OpenStreetMap)
     const r = await fetch(
       `https://nominatim.openstreetmap.org/search?postalcode=${encodeURIComponent(cp)}&countrycodes=${country.toLowerCase()}&format=json&limit=1&addressdetails=1`,
       { headers: { 'Accept-Language': 'pt' } }
@@ -115,6 +138,25 @@ const initialCompanies: Company[] = [{
   address: { street: 'Rua Augusta', number: '42', complement: '2º Dto', postalCode: '1100-150', city: 'Lisboa', region: '', state: 'Lisboa' },
   dataConsent: true, consentDate: '2024-01-10',
 }]
+
+const initialAllColaboradores: Record<string, Colaborador[]> = {
+  'admin@clinica.pt': [
+    {
+      id: 'c1', nome: 'Ana Costa', nif: '123456789', cargo: 'Enfermeira', departamento: 'Clínica',
+      email: 'ana.costa@clinica.pt', telefone: '+351 912 000 001', dataAdmissao: '2022-03-01',
+      tipoContrato: 'sem-termo',
+      morada: { rua: 'Rua das Flores', numero: '10', andar: '1º Esq', codigoPostal: '1200-192', localidade: 'Lisboa', distrito: 'Lisboa' },
+      documentos: [],
+    },
+    {
+      id: 'c2', nome: 'Bruno Ferreira', nif: '987654321', cargo: 'Rececionista', departamento: 'Administrativo',
+      email: 'bruno.ferreira@clinica.pt', telefone: '+351 912 000 002', dataAdmissao: '2023-06-15',
+      tipoContrato: 'termo-certo',
+      morada: { rua: 'Av. da Liberdade', numero: '200', andar: '3º Dto', codigoPostal: '1250-147', localidade: 'Lisboa', distrito: 'Lisboa' },
+      documentos: [],
+    },
+  ],
+}
 
 // ===== STYLES =====
 const s = {
@@ -159,7 +201,7 @@ const s = {
   msgCenter: { fontSize: '13px', textAlign: 'center' as const, marginTop: '0.875rem', color: '#64748b' },
 }
 
-type Screen = 'login' | 'forgot' | 'register' | 'companies' | 'success'
+type Screen = 'login' | 'forgot' | 'register' | 'companies' | 'success' | 'dashboard'
 type RegStep = 1 | 2 | 3
 type LookupState = 'idle' | 'loading' | 'ok' | 'err'
 
@@ -244,6 +286,15 @@ function CountryPicker({ value, onChange, list }: { value: string; onChange: (co
   )
 }
 
+function InfoField({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p style={{ fontSize: '11px', fontWeight: 500, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '.05em', margin: '0 0 3px 0' }}>{label}</p>
+      <p style={{ fontSize: '14px', color: '#0f172a', margin: 0 }}>{value || '—'}</p>
+    </div>
+  )
+}
+
 export default function App() {
   const [screen, setScreen] = useState<Screen>('login')
   const [companies, setCompanies] = useState<Company[]>(initialCompanies)
@@ -288,8 +339,37 @@ export default function App() {
   // Modal termos/privacidade
   const [modal, setModal] = useState<'terms' | 'privacy' | null>(null)
 
-  // Lista de países carregada da API (começa com fallback)
+  // Lista de países
   const [countryList, setCountryList] = useState<CountryItem[]>(FALLBACK_COUNTRIES)
+
+  // ===== DASHBOARD STATE =====
+  const [colabView, setColabView] = useState<'list' | 'form' | 'detail'>('list')
+  const [selectedColab, setSelectedColab] = useState<Colaborador | null>(null)
+  const [colabDetailTab, setColabDetailTab] = useState<'dados' | 'documentos'>('dados')
+  const [confirmDeleteColab, setConfirmDeleteColab] = useState<string | null>(null)
+  const [allColaboradores, setAllColaboradores] = useState<Record<string, Colaborador[]>>(initialAllColaboradores)
+  // Form — novo colaborador
+  const [fNome, setFNome] = useState('')
+  const [fNif, setFNif] = useState('')
+  const [fCargo, setFCargo] = useState('')
+  const [fDept, setFDept] = useState('')
+  const [fEmail, setFEmail] = useState('')
+  const [fTel, setFTel] = useState('')
+  const [fDataAdm, setFDataAdm] = useState('')
+  const [fContrato, setFContrato] = useState<Colaborador['tipoContrato']>('sem-termo')
+  const [fRua, setFRua] = useState('')
+  const [fNumero, setFNumero] = useState('')
+  const [fAndar, setFAndar] = useState('')
+  const [fCP, setFCP] = useState('')
+  const [fLocalidade, setFLocalidade] = useState('')
+  const [fDistrito, setFDistrito] = useState('')
+  const [formColabErr, setFormColabErr] = useState('')
+  // Upload
+  const [uploadNome, setUploadNome] = useState('')
+  const [uploadTipo, setUploadTipo] = useState<Documento['tipo']>('pessoal')
+  const [uploadFile, setUploadFile] = useState<File | null>(null)
+  const [uploadErr, setUploadErr] = useState('')
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const cfg = getConfig(regCountry)
   const cfgPhone = countryList.find(c => c.code === regCountry)?.phone ?? ''
@@ -297,7 +377,6 @@ export default function App() {
   const companiesRef = useRef(companies)
   companiesRef.current = companies
 
-  // Busca lista completa de países da restcountries.com
   useEffect(() => {
     fetch('https://restcountries.com/v3.1/all?fields=name,cca2,flag,idd,translations')
       .then(r => r.json())
@@ -306,10 +385,8 @@ export default function App() {
           .filter((c: any) => c.idd?.root && c.idd?.suffixes?.length > 0)
           .map((c: any) => ({
             code: c.cca2 as string,
-            // prefere nome em português; fallback para inglês
             name: (c.translations?.por?.common || c.name.common) as string,
             flag: c.flag as string,
-            // 1 suffix → concatena (ex: +3+51 = +351); vários suffixes → usa só root (ex: +1 para EUA)
             phone: (c.idd.suffixes.length === 1 ? c.idd.root + c.idd.suffixes[0] : c.idd.root) as string,
           }))
           .sort((a: CountryItem, b: CountryItem) => a.name.localeCompare(b.name, 'pt'))
@@ -318,7 +395,6 @@ export default function App() {
       .catch(() => { /* mantém FALLBACK_COUNTRIES */ })
   }, [])
 
-  // Google Sign-In
   useEffect(() => {
     const script = document.createElement('script')
     script.src = 'https://accounts.google.com/gsi/client'
@@ -438,6 +514,73 @@ export default function App() {
     goTo('success')
   }
 
+  // ===== COLABORADORES — funções =====
+  const colaboradores = allColaboradores[selectedCompany.email] ?? []
+
+  function updateColaboradores(fn: (prev: Colaborador[]) => Colaborador[]) {
+    setAllColaboradores(prev => ({ ...prev, [selectedCompany.email]: fn(prev[selectedCompany.email] ?? []) }))
+  }
+
+  function resetFormColab() {
+    setFNome(''); setFNif(''); setFCargo(''); setFDept(''); setFEmail(''); setFTel('')
+    setFDataAdm(''); setFContrato('sem-termo'); setFRua(''); setFNumero(''); setFAndar('')
+    setFCP(''); setFLocalidade(''); setFDistrito(''); setFormColabErr('')
+  }
+
+  function adicionarColaborador() {
+    setFormColabErr('')
+    if (!fNome || !fNif || !fCargo || !fDept || !fEmail || !fTel || !fDataAdm) {
+      setFormColabErr('Preencha todos os campos obrigatórios (*).'); return
+    }
+    if (!validarEmail(fEmail)) { setFormColabErr('Introduza um e-mail válido.'); return }
+    const novo: Colaborador = {
+      id: Date.now().toString(),
+      nome: fNome, nif: fNif, cargo: fCargo, departamento: fDept,
+      email: fEmail, telefone: fTel, dataAdmissao: fDataAdm,
+      tipoContrato: fContrato,
+      morada: { rua: fRua, numero: fNumero, andar: fAndar, codigoPostal: fCP, localidade: fLocalidade, distrito: fDistrito },
+      documentos: [],
+    }
+    updateColaboradores(prev => [...prev, novo])
+    resetFormColab()
+    setColabView('list')
+  }
+
+  function excluirColaborador(id: string) {
+    updateColaboradores(prev => prev.filter(c => c.id !== id))
+    setConfirmDeleteColab(null)
+    if (selectedColab?.id === id) { setSelectedColab(null); setColabView('list') }
+  }
+
+  function adicionarDocumento() {
+    setUploadErr('')
+    if (!uploadNome || !uploadFile) { setUploadErr('Introduza um nome e selecione um ficheiro.'); return }
+    if (!selectedColab) return
+    const doc: Documento = {
+      id: Date.now().toString(), nome: uploadNome, tipo: uploadTipo,
+      fileName: uploadFile.name, dataUpload: new Date().toISOString().split('T')[0], fileObj: uploadFile,
+    }
+    const updated: Colaborador = { ...selectedColab, documentos: [...selectedColab.documentos, doc] }
+    setSelectedColab(updated)
+    updateColaboradores(prev => prev.map(c => c.id === selectedColab.id ? updated : c))
+    setUploadNome(''); setUploadFile(null); setUploadTipo('pessoal')
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
+  function removerDocumento(docId: string) {
+    if (!selectedColab) return
+    const updated: Colaborador = { ...selectedColab, documentos: selectedColab.documentos.filter(d => d.id !== docId) }
+    setSelectedColab(updated)
+    updateColaboradores(prev => prev.map(c => c.id === selectedColab.id ? updated : c))
+  }
+
+  function abrirDocumento(doc: Documento) {
+    if (!doc.fileObj) return
+    const url = URL.createObjectURL(doc.fileObj)
+    window.open(url, '_blank')
+    setTimeout(() => URL.revokeObjectURL(url), 10000)
+  }
+
   const forca = forcaSenha(regPass)
   const forcaCores = ['', '#ef4444', '#f97316', '#eab308', '#22c55e', '#16a34a']
   const forcaLabels = ['', 'Muito fraca', 'Fraca', 'Razoável', 'Forte', 'Muito forte']
@@ -466,12 +609,8 @@ export default function App() {
     return <div style={style}>{alertState.msg}</div>
   }
 
-  function countryFlag(code: string) {
-    return countryList.find(c => c.code === code)?.flag ?? ''
-  }
-  function countryName(code: string) {
-    return countryList.find(c => c.code === code)?.name ?? code
-  }
+  function countryFlag(code: string) { return countryList.find(c => c.code === code)?.flag ?? '' }
+  function countryName(code: string) { return countryList.find(c => c.code === code)?.name ?? code }
 
   // ===== LOGIN =====
   if (screen === 'login') return (
@@ -551,16 +690,13 @@ export default function App() {
         <StepIndicator />
         <AlertBox />
 
-        {/* STEP 1 */}
         {regStep === 1 && (
           <>
             <p style={s.sectionLabel}>País e morada</p>
-
             <div style={s.field}>
               <label style={s.label}>País *</label>
               <CountryPicker value={regCountry} onChange={code => { setRegCountry(code); resetAddressFields() }} list={countryList} />
             </div>
-
             <div style={s.field}>
               <label style={s.label}>{cfg.postalLabel} *</label>
               <div style={{ display: 'flex', gap: '6px' }}>
@@ -583,12 +719,10 @@ export default function App() {
               {lookupState === 'err' && <p style={s.hintErr}>Código postal não encontrado. Preencha manualmente.</p>}
               {lookupState === 'idle' && cfg.postalLookup && <p style={s.hint}>Preencha para preenchimento automático da morada</p>}
             </div>
-
             <div style={s.field}>
               <label style={s.label}>{cfg.streetLabel} *</label>
               <input style={lookupState === 'ok' && regStreet ? s.inputFilled : s.input} type="text" placeholder="Ex: Rua Augusta" value={regStreet} onChange={e => setRegStreet(e.target.value)} />
             </div>
-
             <div style={cfg.hasComplement ? s.row3 : { marginBottom: '0.875rem' }}>
               <div>
                 <label style={s.label}>Número</label>
@@ -601,7 +735,6 @@ export default function App() {
                 </div>
               )}
             </div>
-
             <div style={s.row2}>
               <div>
                 <label style={s.label}>{cfg.cityLabel} *</label>
@@ -612,21 +745,17 @@ export default function App() {
                 <input style={lookupState === 'ok' && regStateAddr ? s.inputFilled : s.input} type="text" placeholder={cfg.stateLabel} value={regStateAddr} onChange={e => setRegStateAddr(e.target.value)} />
               </div>
             </div>
-
             {cfg.regionLabel !== '' && (
               <div style={s.field}>
                 <label style={s.label}>{cfg.regionLabel}</label>
                 <input style={lookupState === 'ok' && regRegion ? s.inputFilled : s.input} type="text" placeholder={cfg.regionLabel} value={regRegion} onChange={e => setRegRegion(e.target.value)} />
               </div>
             )}
-
             <p style={{ ...s.sectionLabel, marginTop: '12px' }}>Dados da empresa</p>
-
             <div style={s.field}>
               <label style={s.label}>Nome da empresa *</label>
               <input style={s.input} type="text" placeholder="Ex: Clínica Saúde Lisboa, Lda." value={regCompany} onChange={e => setRegCompany(e.target.value)} />
             </div>
-
             <div style={s.row2}>
               <div>
                 <label style={s.label}>{cfg.taxLabel} *</label>
@@ -640,12 +769,10 @@ export default function App() {
                 </div>
               </div>
             </div>
-
             <button style={s.btnMain} onClick={regNext1}>Continuar →</button>
           </>
         )}
 
-        {/* STEP 2 */}
         {regStep === 2 && (
           <>
             <p style={s.sectionLabel}>Dados do administrador</p>
@@ -719,7 +846,6 @@ export default function App() {
           </div>
         )}
 
-        {/* STEP 3 */}
         {regStep === 3 && (
           <>
             <p style={s.sectionLabel}>Credenciais de acesso ao sistema</p>
@@ -824,7 +950,328 @@ export default function App() {
           <p style={{ fontSize: '15px', fontWeight: 500, color: '#0f172a', marginTop: '4px' }}>{selectedCompany.name}</p>
           <p style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>{countryFlag(selectedCompany.country)} {countryName(selectedCompany.country)}</p>
         </div>
-        <button style={s.btnMain} onClick={() => window.alert('Dashboard em construção! 🚀')}>Ir para o dashboard →</button>
+        <button style={s.btnMain} onClick={() => { setColabView('list'); setSelectedColab(null); goTo('dashboard') }}>
+          Ir para o dashboard →
+        </button>
+      </div>
+    </div>
+  )
+
+  // ===== DASHBOARD =====
+  if (screen === 'dashboard') return (
+    <div style={{ background: '#f1f5f9', minHeight: '100vh', fontFamily: 'system-ui, sans-serif' }}>
+
+      {/* Header */}
+      <div style={{ background: '#0f172a', color: '#fff', height: '56px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 1.5rem', position: 'sticky', top: 0, zIndex: 100 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: '#1e3a8a', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px' }}>👥</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontWeight: 600, fontSize: '14px' }}>RH Gestão</span>
+            <span style={{ color: '#475569', fontSize: '13px' }}>|</span>
+            <span style={{ fontSize: '13px', color: '#94a3b8' }}>{selectedCompany.name}</span>
+          </div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <span style={{ fontSize: '13px', color: '#94a3b8' }}>👤 {selectedCompany.admin}</span>
+          <button
+            onClick={() => { setColabView('list'); setSelectedColab(null); goTo('login') }}
+            style={{ height: '32px', padding: '0 12px', background: 'transparent', border: '1px solid #334155', borderRadius: '6px', color: '#94a3b8', fontSize: '13px', cursor: 'pointer' }}
+          >
+            Sair
+          </button>
+        </div>
+      </div>
+
+      {/* Tab bar */}
+      <div style={{ background: '#fff', borderBottom: '1px solid #e2e8f0', padding: '0 1.5rem' }}>
+        <button style={{ height: '44px', padding: '0 16px', background: 'none', border: 'none', borderBottom: '2px solid #2563eb', color: '#2563eb', fontSize: '13px', fontWeight: 500, cursor: 'pointer' }}>
+          👥 Colaboradores
+        </button>
+      </div>
+
+      {/* Content */}
+      <div style={{ padding: '1.5rem' }}>
+        <div style={{ maxWidth: '1100px', margin: '0 auto' }}>
+
+          {/* Confirm delete modal */}
+          {confirmDeleteColab && (
+            <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
+              <div style={{ background: '#fff', borderRadius: '16px', padding: '1.5rem', width: '100%', maxWidth: '380px' }}>
+                <p style={{ fontWeight: 600, fontSize: '15px', color: '#0f172a', marginTop: 0, marginBottom: '8px' }}>Eliminar colaborador?</p>
+                <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '1.5rem' }}>
+                  Esta ação não pode ser desfeita. Todos os documentos associados serão perdidos.
+                </p>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button onClick={() => setConfirmDeleteColab(null)} style={{ flex: 1, height: '38px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', color: '#475569', fontSize: '13px', cursor: 'pointer' }}>
+                    Cancelar
+                  </button>
+                  <button onClick={() => excluirColaborador(confirmDeleteColab!)} style={{ flex: 1, height: '38px', background: '#ef4444', border: 'none', borderRadius: '8px', color: '#fff', fontSize: '13px', fontWeight: 500, cursor: 'pointer' }}>
+                    Eliminar
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── LIST VIEW ── */}
+          {colabView === 'list' && (
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
+                <div>
+                  <h2 style={{ fontSize: '18px', fontWeight: 600, color: '#0f172a', margin: 0 }}>Colaboradores</h2>
+                  <p style={{ fontSize: '13px', color: '#64748b', marginTop: '3px', marginBottom: 0 }}>
+                    {colaboradores.length} {colaboradores.length === 1 ? 'colaborador' : 'colaboradores'}
+                  </p>
+                </div>
+                <button
+                  onClick={() => { resetFormColab(); setColabView('form') }}
+                  style={{ height: '38px', padding: '0 16px', background: '#2563eb', border: 'none', borderRadius: '8px', color: '#fff', fontSize: '13px', fontWeight: 500, cursor: 'pointer' }}
+                >
+                  + Adicionar colaborador
+                </button>
+              </div>
+
+              {colaboradores.length === 0 ? (
+                <div style={{ background: '#fff', borderRadius: '12px', border: '1px solid #e2e8f0', padding: '3rem', textAlign: 'center' }}>
+                  <div style={{ fontSize: '40px', marginBottom: '12px' }}>👤</div>
+                  <p style={{ fontSize: '15px', fontWeight: 500, color: '#0f172a', marginBottom: '4px' }}>Nenhum colaborador</p>
+                  <p style={{ fontSize: '13px', color: '#64748b' }}>Adicione o primeiro colaborador para começar.</p>
+                </div>
+              ) : (
+                <div style={{ background: '#fff', borderRadius: '12px', border: '1px solid #e2e8f0', overflow: 'hidden' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr 1fr 110px 150px 90px', gap: '12px', padding: '10px 16px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', fontSize: '11px', fontWeight: 500, color: '#64748b', textTransform: 'uppercase', letterSpacing: '.05em' }}>
+                    <span>Nome</span><span>Cargo</span><span>Departamento</span><span>Admissão</span><span>Contrato</span><span></span>
+                  </div>
+                  {colaboradores.map((c, i) => (
+                    <div key={c.id} style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr 1fr 110px 150px 90px', gap: '12px', padding: '14px 16px', borderBottom: i < colaboradores.length - 1 ? '1px solid #f1f5f9' : 'none', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }} onClick={() => { setSelectedColab(c); setColabDetailTab('dados'); setColabView('detail') }}>
+                        <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#eff6ff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px', fontWeight: 600, color: '#2563eb', flexShrink: 0 }}>
+                          {c.nome.charAt(0)}
+                        </div>
+                        <span style={{ fontSize: '13px', fontWeight: 500, color: '#2563eb' }}>{c.nome}</span>
+                      </div>
+                      <span style={{ fontSize: '13px', color: '#475569' }}>{c.cargo}</span>
+                      <span style={{ fontSize: '13px', color: '#475569' }}>{c.departamento}</span>
+                      <span style={{ fontSize: '13px', color: '#475569' }}>{c.dataAdmissao}</span>
+                      <span style={{ fontSize: '12px', color: '#475569', background: '#f1f5f9', borderRadius: '20px', padding: '3px 10px', whiteSpace: 'nowrap' as const, display: 'inline-block' }}>
+                        {CONTRATO_LABELS[c.tipoContrato]}
+                      </span>
+                      <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
+                        <button onClick={() => { setSelectedColab(c); setColabDetailTab('dados'); setColabView('detail') }} style={{ height: '30px', padding: '0 10px', background: '#eff6ff', border: 'none', borderRadius: '6px', color: '#2563eb', fontSize: '12px', cursor: 'pointer' }}>
+                          Ver
+                        </button>
+                        <button onClick={() => setConfirmDeleteColab(c.id)} style={{ height: '30px', padding: '0 10px', background: '#fef2f2', border: 'none', borderRadius: '6px', color: '#ef4444', fontSize: '12px', cursor: 'pointer' }}>
+                          ✕
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── FORM VIEW ── */}
+          {colabView === 'form' && (
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '1.5rem' }}>
+                <button onClick={() => setColabView('list')} style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '13px', color: '#64748b', cursor: 'pointer', background: 'none', border: 'none', padding: 0 }}>
+                  ← Voltar à lista
+                </button>
+                <span style={{ color: '#e2e8f0' }}>|</span>
+                <h2 style={{ fontSize: '18px', fontWeight: 600, color: '#0f172a', margin: 0 }}>Novo colaborador</h2>
+              </div>
+              <div style={{ background: '#fff', borderRadius: '12px', border: '1px solid #e2e8f0', padding: '1.5rem' }}>
+                {formColabErr && <div style={s.alertErr}>{formColabErr}</div>}
+                <p style={s.sectionLabel}>Dados profissionais</p>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '0.875rem' }}>
+                  <div><label style={s.label}>Nome completo *</label><input style={s.input} type="text" placeholder="Ex: Ana Costa" value={fNome} onChange={e => setFNome(e.target.value)} /></div>
+                  <div><label style={s.label}>NIF *</label><input style={s.input} type="text" placeholder="NIF" value={fNif} onChange={e => setFNif(e.target.value)} /></div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '0.875rem' }}>
+                  <div><label style={s.label}>Cargo *</label><input style={s.input} type="text" placeholder="Ex: Enfermeira" value={fCargo} onChange={e => setFCargo(e.target.value)} /></div>
+                  <div><label style={s.label}>Departamento *</label><input style={s.input} type="text" placeholder="Ex: Clínica" value={fDept} onChange={e => setFDept(e.target.value)} /></div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '0.875rem' }}>
+                  <div><label style={s.label}>E-mail *</label><input style={s.input} type="email" placeholder="colaborador@empresa.pt" value={fEmail} onChange={e => setFEmail(e.target.value)} /></div>
+                  <div><label style={s.label}>Telefone *</label><input style={s.input} type="tel" placeholder="+351 912 000 000" value={fTel} onChange={e => setFTel(e.target.value)} /></div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '0.875rem' }}>
+                  <div><label style={s.label}>Data de admissão *</label><input style={s.input} type="date" value={fDataAdm} onChange={e => setFDataAdm(e.target.value)} /></div>
+                  <div>
+                    <label style={s.label}>Tipo de contrato</label>
+                    <select style={s.select} value={fContrato} onChange={e => setFContrato(e.target.value as Colaborador['tipoContrato'])}>
+                      {Object.entries(CONTRATO_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <p style={{ ...s.sectionLabel, marginTop: '12px' }}>Morada</p>
+                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '10px', marginBottom: '0.875rem' }}>
+                  <div><label style={s.label}>Rua / Avenida</label><input style={s.input} type="text" placeholder="Ex: Rua das Flores" value={fRua} onChange={e => setFRua(e.target.value)} /></div>
+                  <div><label style={s.label}>Número</label><input style={s.input} type="text" placeholder="10" value={fNumero} onChange={e => setFNumero(e.target.value)} /></div>
+                  <div><label style={s.label}>Andar / Fração</label><input style={s.input} type="text" placeholder="1º Esq" value={fAndar} onChange={e => setFAndar(e.target.value)} /></div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px', marginBottom: '1.5rem' }}>
+                  <div><label style={s.label}>Código Postal</label><input style={s.input} type="text" placeholder="1100-150" value={fCP} onChange={e => setFCP(e.target.value)} /></div>
+                  <div><label style={s.label}>Localidade</label><input style={s.input} type="text" placeholder="Lisboa" value={fLocalidade} onChange={e => setFLocalidade(e.target.value)} /></div>
+                  <div><label style={s.label}>Distrito</label><input style={s.input} type="text" placeholder="Lisboa" value={fDistrito} onChange={e => setFDistrito(e.target.value)} /></div>
+                </div>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button onClick={adicionarColaborador} style={{ flex: 1, height: '40px', background: '#2563eb', border: 'none', borderRadius: '8px', color: '#fff', fontSize: '14px', fontWeight: 500, cursor: 'pointer' }}>
+                    Guardar colaborador
+                  </button>
+                  <button onClick={() => { resetFormColab(); setColabView('list') }} style={{ height: '40px', padding: '0 16px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', color: '#475569', fontSize: '13px', cursor: 'pointer' }}>
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── DETAIL VIEW ── */}
+          {colabView === 'detail' && selectedColab && (
+            <div>
+              <button onClick={() => { setColabView('list'); setSelectedColab(null) }} style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '13px', color: '#64748b', cursor: 'pointer', background: 'none', border: 'none', padding: 0, marginBottom: '1.25rem' }}>
+                ← Voltar à lista
+              </button>
+
+              {/* Employee header card */}
+              <div style={{ background: '#fff', borderRadius: '12px', border: '1px solid #e2e8f0', padding: '1.25rem 1.5rem', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '16px' }}>
+                <div style={{ width: '52px', height: '52px', borderRadius: '50%', background: '#eff6ff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px', fontWeight: 700, color: '#2563eb', flexShrink: 0 }}>
+                  {selectedColab.nome.charAt(0)}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <h2 style={{ fontSize: '17px', fontWeight: 600, color: '#0f172a', margin: '0 0 4px 0' }}>{selectedColab.nome}</h2>
+                  <p style={{ fontSize: '13px', color: '#64748b', margin: 0 }}>
+                    {selectedColab.cargo} · {selectedColab.departamento}
+                    <span style={{ marginLeft: '8px', background: '#f1f5f9', borderRadius: '20px', padding: '2px 8px', fontSize: '12px' }}>
+                      {CONTRATO_LABELS[selectedColab.tipoContrato]}
+                    </span>
+                  </p>
+                </div>
+                <button onClick={() => setConfirmDeleteColab(selectedColab.id)} style={{ height: '34px', padding: '0 14px', background: '#fef2f2', border: 'none', borderRadius: '8px', color: '#ef4444', fontSize: '13px', cursor: 'pointer' }}>
+                  Eliminar
+                </button>
+              </div>
+
+              {/* Detail tabs + content */}
+              <div style={{ background: '#fff', borderRadius: '12px', border: '1px solid #e2e8f0', overflow: 'hidden' }}>
+                <div style={{ display: 'flex', padding: '0 1.5rem', borderBottom: '1px solid #e2e8f0' }}>
+                  {(['dados', 'documentos'] as const).map(tab => (
+                    <button
+                      key={tab}
+                      onClick={() => setColabDetailTab(tab)}
+                      style={{ height: '44px', padding: '0 16px', background: 'none', border: 'none', borderBottom: colabDetailTab === tab ? '2px solid #2563eb' : '2px solid transparent', color: colabDetailTab === tab ? '#2563eb' : '#64748b', fontSize: '13px', fontWeight: colabDetailTab === tab ? 500 : 400, cursor: 'pointer' }}
+                    >
+                      {tab === 'dados' ? '📋 Dados' : `📁 Documentos (${selectedColab.documentos.length})`}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Dados tab */}
+                {colabDetailTab === 'dados' && (
+                  <div style={{ padding: '1.5rem' }}>
+                    <p style={s.sectionLabel}>Dados profissionais</p>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px 24px', marginBottom: '1.5rem' }}>
+                      <InfoField label="Nome" value={selectedColab.nome} />
+                      <InfoField label="NIF" value={selectedColab.nif} />
+                      <InfoField label="Cargo" value={selectedColab.cargo} />
+                      <InfoField label="Departamento" value={selectedColab.departamento} />
+                      <InfoField label="Data de admissão" value={selectedColab.dataAdmissao} />
+                      <InfoField label="Tipo de contrato" value={CONTRATO_LABELS[selectedColab.tipoContrato]} />
+                    </div>
+                    <p style={s.sectionLabel}>Contactos</p>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '20px 24px', marginBottom: '1.5rem' }}>
+                      <InfoField label="E-mail" value={selectedColab.email} />
+                      <InfoField label="Telefone" value={selectedColab.telefone} />
+                    </div>
+                    <p style={s.sectionLabel}>Morada</p>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px 24px' }}>
+                      <InfoField label="Rua / Avenida" value={selectedColab.morada.rua} />
+                      <InfoField label="Número" value={selectedColab.morada.numero} />
+                      <InfoField label="Andar / Fração" value={selectedColab.morada.andar} />
+                      <InfoField label="Código Postal" value={selectedColab.morada.codigoPostal} />
+                      <InfoField label="Localidade" value={selectedColab.morada.localidade} />
+                      <InfoField label="Distrito" value={selectedColab.morada.distrito} />
+                    </div>
+                  </div>
+                )}
+
+                {/* Documentos tab */}
+                {colabDetailTab === 'documentos' && (
+                  <div style={{ padding: '1.5rem' }}>
+                    <p style={s.sectionLabel}>Adicionar documento</p>
+                    <div style={{ background: '#f8fafc', borderRadius: '10px', border: '1px dashed #cbd5e1', padding: '1.25rem', marginBottom: '1.5rem' }}>
+                      {uploadErr && <div style={{ ...s.alertErr, marginBottom: '10px' }}>{uploadErr}</div>}
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
+                        <div>
+                          <label style={s.label}>Nome do documento *</label>
+                          <input style={s.input} type="text" placeholder="Ex: Contrato de trabalho 2024" value={uploadNome} onChange={e => setUploadNome(e.target.value)} />
+                        </div>
+                        <div>
+                          <label style={s.label}>Tipo</label>
+                          <select style={s.select} value={uploadTipo} onChange={e => setUploadTipo(e.target.value as Documento['tipo'])}>
+                            {Object.entries(DOC_TIPO_LABELS).map(([k, v]) => <option key={k} value={k}>{DOC_TIPO_ICONS[k]} {v}</option>)}
+                          </select>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-end' }}>
+                        <div style={{ flex: 1 }}>
+                          <label style={s.label}>Ficheiro *</label>
+                          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                            <button onClick={() => fileInputRef.current?.click()} style={{ height: '38px', padding: '0 14px', background: '#fff', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#475569', fontSize: '13px', cursor: 'pointer', whiteSpace: 'nowrap' as const }}>
+                              📎 Escolher ficheiro
+                            </button>
+                            <span style={{ fontSize: '13px', color: uploadFile ? '#0f172a' : '#94a3b8' }}>
+                              {uploadFile ? uploadFile.name : 'Nenhum ficheiro selecionado'}
+                            </span>
+                            <input ref={fileInputRef} type="file" style={{ display: 'none' }} onChange={e => setUploadFile(e.target.files?.[0] ?? null)} />
+                          </div>
+                        </div>
+                        <button onClick={adicionarDocumento} style={{ height: '38px', padding: '0 18px', background: '#2563eb', border: 'none', borderRadius: '8px', color: '#fff', fontSize: '13px', fontWeight: 500, cursor: 'pointer', whiteSpace: 'nowrap' as const }}>
+                          Adicionar
+                        </button>
+                      </div>
+                    </div>
+
+                    {selectedColab.documentos.length === 0 ? (
+                      <div style={{ textAlign: 'center', padding: '2rem 1rem', color: '#94a3b8' }}>
+                        <p style={{ fontSize: '32px', marginBottom: '8px' }}>📁</p>
+                        <p style={{ fontSize: '13px' }}>Nenhum documento adicionado ainda.</p>
+                      </div>
+                    ) : (
+                      <>
+                        <p style={s.sectionLabel}>Documentos ({selectedColab.documentos.length})</p>
+                        {selectedColab.documentos.map(doc => (
+                          <div key={doc.id} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 14px', border: '1px solid #e2e8f0', borderRadius: '8px', marginBottom: '6px' }}>
+                            <span style={{ fontSize: '22px', flexShrink: 0 }}>{DOC_TIPO_ICONS[doc.tipo]}</span>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <p style={{ fontSize: '13px', fontWeight: 500, color: '#0f172a', margin: '0 0 2px 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{doc.nome}</p>
+                              <p style={{ fontSize: '11px', color: '#94a3b8', margin: 0 }}>
+                                {DOC_TIPO_LABELS[doc.tipo]} · {doc.fileName} · {doc.dataUpload}
+                              </p>
+                            </div>
+                            <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                              {doc.fileObj && (
+                                <button onClick={() => abrirDocumento(doc)} style={{ height: '30px', padding: '0 10px', background: '#eff6ff', border: 'none', borderRadius: '6px', color: '#2563eb', fontSize: '12px', cursor: 'pointer' }}>
+                                  Abrir
+                                </button>
+                              )}
+                              <button onClick={() => removerDocumento(doc.id)} style={{ height: '30px', padding: '0 10px', background: '#fef2f2', border: 'none', borderRadius: '6px', color: '#ef4444', fontSize: '12px', cursor: 'pointer' }}>
+                                Remover
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+        </div>
       </div>
     </div>
   )
