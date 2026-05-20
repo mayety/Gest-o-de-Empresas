@@ -312,6 +312,7 @@ export default function App() {
   const [colabSubTab, setColabSubTab] = useState<'ativos'|'inativos'>('ativos')
   const [colabView, setColabView] = useState<'list'|'form'|'detail'>('list')
   const [colabPage, setColabPage] = useState(1)
+  const [colabSearch, setColabSearch] = useState('')
   const [expandedColabId, setExpandedColabId] = useState<string|null>(null)
   const [selectedColab, setSelectedColab] = useState<Colaborador|null>(null)
   const [colabDetailTab, setColabDetailTab] = useState<'dados'|'documentos'>('dados')
@@ -435,8 +436,9 @@ export default function App() {
   const colaboradores = allColaboradores[selectedCompany.email] ?? []
   const ativos  = colaboradores.filter(c=>c.ativo)
   const inativos = colaboradores.filter(c=>!c.ativo)
-  const totalPages = Math.max(1, Math.ceil(ativos.length / ITEMS_PER_PAGE))
-  const paginatedAtivos = ativos.slice((colabPage-1)*ITEMS_PER_PAGE, colabPage*ITEMS_PER_PAGE)
+  const ativosFiltered = ativos.filter(c => c.nome.toLowerCase().includes(colabSearch.toLowerCase()))
+  const totalPages = Math.max(1, Math.ceil(ativosFiltered.length / ITEMS_PER_PAGE))
+  const paginatedAtivos = ativosFiltered.slice((colabPage-1)*ITEMS_PER_PAGE, colabPage*ITEMS_PER_PAGE)
 
   function updateColaboradores(fn: (prev: Colaborador[]) => Colaborador[]) {
     setAllColaboradores(prev => ({ ...prev, [selectedCompany.email]: fn(prev[selectedCompany.email]??[]) }))
@@ -523,7 +525,7 @@ export default function App() {
     btnMain:   { width:'100%', height:'40px', background:theme.btn, color:theme.btnText, border:'none', borderRadius:'8px', fontSize:'14px', fontWeight:600, cursor:'pointer', marginTop:'4px' } as React.CSSProperties,
     btnOutline:{ width:'100%', height:'40px', background:'transparent', color:theme.text, border:'1px solid '+theme.border, borderRadius:'8px', fontSize:'13px', fontWeight:500, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:'6px', marginTop:'6px' } as React.CSSProperties,
     btnLink:   { fontSize:'13px', color:theme.btn, cursor:'pointer', background:'none', border:'none', padding:0, textDecoration:'underline' } as React.CSSProperties,
-    backBtn:   { display:'flex', alignItems:'center', gap:'5px', fontSize:'13px', color:theme.textMuted, cursor:'pointer', background:'none', border:'none', padding:0, marginBottom:'1.25rem' } as React.CSSProperties,
+    backBtn:   { display:'inline-flex', alignItems:'center', gap:'6px', fontSize:'12px', color:theme.textMuted, cursor:'pointer', background:'none', border:'none', padding:'4px 0', marginBottom:'1.25rem', opacity:.7 } as React.CSSProperties,
     title:     { fontSize:'22px', fontWeight:700, color:theme.text, margin:0 } as React.CSSProperties,
     sub:       { fontSize:'13px', color:theme.textMuted, marginTop:'4px' } as React.CSSProperties,
     card2:     { background:theme.card, border:'1px solid '+theme.border, borderRadius:'12px' } as React.CSSProperties,
@@ -968,9 +970,12 @@ export default function App() {
                   <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'1rem' }}>
                     <div>
                       <h2 style={{ ...T.title, fontSize:'20px' }}>Colaboradores ativos</h2>
-                      <p style={{ ...T.sub, marginTop:'3px' }}>{ativos.length} {ativos.length===1?'colaborador':'colaboradores'}</p>
                     </div>
                     <button onClick={()=>{resetFormColab();setEditingColab(null);setColabView('form')}} style={{ ...btnMd(theme.btn,theme.btnText) }}>+ Adicionar colaborador</button>
+                  </div>
+                  <div style={{ display:'flex', gap:'8px', marginBottom:'1rem' }}>
+                    <input style={{ ...T.input, flex:1 }} type="text" placeholder="Pesquisar por nome..." value={colabSearch} onChange={e=>{setColabSearch(e.target.value);setColabPage(1)}}/>
+                    {colabSearch&&<button onClick={()=>{setColabSearch('');setColabPage(1)}} style={{ height:'38px', padding:'0 12px', background:theme.bg, border:'1px solid '+theme.border, borderRadius:'8px', color:theme.text, fontSize:'13px', cursor:'pointer', flexShrink:0 }}>Limpar</button>}
                   </div>
                   {ativos.length===0?(
                     <div style={{ ...T.card2, padding:'3rem', textAlign:'center' }}>
@@ -978,23 +983,27 @@ export default function App() {
                       <p style={{ fontSize:'16px', fontWeight:700, color:theme.text, marginBottom:'4px' }}>Nenhum colaborador ativo</p>
                       <p style={{ fontSize:'13px', color:theme.textMuted }}>Adicione o primeiro colaborador para começar.</p>
                     </div>
+                  ):paginatedAtivos.length===0?(
+                    <div style={{ ...T.card2, padding:'2rem', textAlign:'center' }}>
+                      <p style={{ fontSize:'14px', color:theme.textMuted, margin:0 }}>Nenhum colaborador encontrado para "{colabSearch}"</p>
+                    </div>
                   ):(
-                    <div style={{ ...T.card2, overflow:'hidden' }}>
+                    <div style={{ ...T.card2, overflow:'auto', maxHeight:'600px' }}>
                       {paginatedAtivos.map((c,i)=>(
                         <div key={c.id} style={{ borderBottom:i<paginatedAtivos.length-1?'1px solid '+theme.border:'none' }}>
                           {/* Accordion header */}
-                          <div onClick={()=>setExpandedColabId(expandedColabId===c.id?null:c.id)} style={{ display:'flex', alignItems:'center', gap:'12px', padding:'14px 16px', cursor:'pointer' }}>
-                            <div style={{ width:'36px', height:'36px', borderRadius:'50%', background:theme.bg, display:'flex', alignItems:'center', justifyContent:'center', fontSize:'14px', fontWeight:700, color:theme.btn, flexShrink:0 }}>{c.nome.charAt(0)}</div>
+                          <div onClick={()=>setExpandedColabId(expandedColabId===c.id?null:c.id)} style={{ display:'flex', alignItems:'center', gap:'12px', padding:'10px 16px', cursor:'pointer' }}>
+                            <div style={{ width:'32px', height:'32px', borderRadius:'50%', background:theme.bg, display:'flex', alignItems:'center', justifyContent:'center', fontSize:'13px', fontWeight:700, color:theme.btn, flexShrink:0 }}>{c.nome.charAt(0)}</div>
                             <div style={{ flex:1, minWidth:0 }}>
-                              <p style={{ fontSize:'14px', fontWeight:700, color:theme.text, margin:0 }}>{c.nome}</p>
-                              <p style={{ fontSize:'12px', color:theme.textMuted, margin:'2px 0 0 0' }}>{c.cargo} · {c.departamento}</p>
+                              <p style={{ fontSize:'13px', fontWeight:700, color:theme.text, margin:0 }}>{c.nome}</p>
+                              <p style={{ fontSize:'11px', color:theme.textMuted, margin:'1px 0 0 0' }}>{c.cargo} · {c.departamento}</p>
                             </div>
                             <span style={{ fontSize:'12px', color:theme.textMuted, transition:'transform .2s', display:'inline-block', transform:expandedColabId===c.id?'rotate(90deg)':'none' }}>►</span>
                           </div>
                           {/* Accordion body */}
                           {expandedColabId===c.id&&(
-                            <div style={{ padding:'0 16px 16px 64px', borderTop:'1px solid '+theme.border, background:theme.bg }}>
-                              <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:'12px 20px', margin:'14px 0' }}>
+                            <div style={{ padding:'0 16px 12px 64px', borderTop:'1px solid '+theme.border, background:theme.bg }}>
+                              <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:'12px 20px', margin:'10px 0' }}>
                                 {[['Contrato',CONTRATO_LABELS[c.tipoContrato]],['Admissão',c.dataAdmissao],['Telefone',c.telefone],['E-mail',c.email]].map(([lbl,val])=>(
                                   <div key={lbl}>
                                     <p style={{ fontSize:'10px', fontWeight:700, color:theme.textMuted, textTransform:'uppercase', letterSpacing:'.05em', margin:'0 0 2px 0' }}>{lbl}</p>
@@ -1025,8 +1034,7 @@ export default function App() {
                 {/* ─ INATIVOS ─ */}
                 {colabSubTab==='inativos'&&(
                   <div>
-                    <h2 style={{ ...T.title, fontSize:'20px', marginBottom:'4px' }}>Colaboradores inativos</h2>
-                    <p style={{ ...T.sub, marginBottom:'1rem' }}>{inativos.length} {inativos.length===1?'registo':'registos'}</p>
+                    <h2 style={{ ...T.title, fontSize:'20px', marginBottom:'1rem' }}>Colaboradores inativos</h2>
                     {inativos.length===0?(
                       <div style={{ ...T.card2, padding:'3rem', textAlign:'center' }}>
                         <div style={{ fontSize:'40px', marginBottom:'12px' }}>✅</div>
@@ -1036,12 +1044,12 @@ export default function App() {
                     ):(
                       <div style={{ ...T.card2, overflow:'hidden' }}>
                         {inativos.map((c,i)=>(
-                          <div key={c.id} style={{ display:'flex', alignItems:'center', gap:'14px', padding:'14px 16px', borderBottom:i<inativos.length-1?'1px solid '+theme.border:'none' }}>
-                            <div style={{ width:'36px', height:'36px', borderRadius:'50%', background:theme.bg, display:'flex', alignItems:'center', justifyContent:'center', fontSize:'14px', fontWeight:700, color:theme.textMuted, flexShrink:0 }}>{c.nome.charAt(0)}</div>
+                          <div key={c.id} style={{ display:'flex', alignItems:'center', gap:'14px', padding:'10px 16px', borderBottom:i<inativos.length-1?'1px solid '+theme.border:'none' }}>
+                            <div style={{ width:'32px', height:'32px', borderRadius:'50%', background:theme.bg, display:'flex', alignItems:'center', justifyContent:'center', fontSize:'13px', fontWeight:700, color:theme.textMuted, flexShrink:0 }}>{c.nome.charAt(0)}</div>
                             <div style={{ flex:1, minWidth:0 }}>
-                              <p style={{ fontSize:'14px', fontWeight:700, color:theme.text, margin:'0 0 2px 0' }}>{c.nome}</p>
-                              <p style={{ fontSize:'12px', color:theme.textMuted, margin:0 }}>{c.cargo} · {c.departamento}</p>
-                              <p style={{ fontSize:'12px', color:theme.textMuted, margin:'3px 0 0 0' }}>
+                              <p style={{ fontSize:'13px', fontWeight:700, color:theme.text, margin:'0 0 1px 0' }}>{c.nome}</p>
+                              <p style={{ fontSize:'11px', color:theme.textMuted, margin:0 }}>{c.cargo} · {c.departamento}</p>
+                              <p style={{ fontSize:'11px', color:theme.textMuted, margin:'2px 0 0 0' }}>
                                 Saiu em {c.dataSaida} · {c.motivoSaida}
                               </p>
                             </div>
@@ -1061,7 +1069,7 @@ export default function App() {
               {colabView==='form'&&(
                 <div>
                   <div style={{ display:'flex', alignItems:'center', gap:'12px', marginBottom:'1.5rem' }}>
-                    <button onClick={()=>{if(editingColab){setEditingColab(null);setColabView('detail')}else{resetFormColab();setColabView('list')}}} style={T.backBtn}>← {editingColab?'Voltar ao detalhe':'Voltar à lista'}</button>
+                    <button onClick={()=>{if(editingColab){setEditingColab(null);setColabView('detail')}else{resetFormColab();setColabView('list')}}} style={T.backBtn}><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M9 11L5 7l4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>{editingColab?'Voltar ao detalhe':'Voltar à lista'}</button>
                     <span style={{ color:theme.border }}>|</span>
                     <h2 style={{ ...T.title, fontSize:'20px' }}>{editingColab?'Editar colaborador':'Novo colaborador'}</h2>
                   </div>
@@ -1115,7 +1123,7 @@ export default function App() {
               {/* ── DETAIL VIEW ── */}
               {colabView==='detail'&&selectedColab&&(
                 <div>
-                  <button onClick={()=>{setColabView('list');setSelectedColab(null)}} style={T.backBtn}>← Voltar à lista</button>
+                  <button onClick={()=>{setColabView('list');setSelectedColab(null)}} style={T.backBtn}><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M9 11L5 7l4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>Voltar à lista</button>
                   {/* Header card */}
                   <div style={{ ...T.card2, padding:'1.25rem 1.5rem', marginBottom:'1rem', display:'flex', alignItems:'center', gap:'16px' }}>
                     <div style={{ width:'52px', height:'52px', borderRadius:'50%', background:theme.bg, display:'flex', alignItems:'center', justifyContent:'center', fontSize:'20px', fontWeight:700, color:theme.btn, flexShrink:0 }}>{selectedColab.nome.charAt(0)}</div>
@@ -1220,8 +1228,7 @@ export default function App() {
             {/* ═══ DADOS DA EMPRESA ═══ */}
             {dashTab==='empresa'&&(
               <div>
-                <h2 style={{ ...T.title, marginBottom:'4px' }}>Dados da Empresa</h2>
-                <p style={{ ...T.sub, marginBottom:'1.5rem' }}>Edite as informações da empresa logada</p>
+                <h2 style={{ ...T.title, marginBottom:'1.5rem' }}>Dados da Empresa</h2>
                 {empresaMsg&&(
                   <div style={{ ...(empresaMsg.startsWith('ok:') ? s.alertOk : s.alertErr), marginBottom:'1rem' }}>
                     {empresaMsg.replace(/^(ok|err):/, '')}
