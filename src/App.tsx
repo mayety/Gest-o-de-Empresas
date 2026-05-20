@@ -293,7 +293,20 @@ export default function App() {
   const [countryList, setCountryList] = useState<CountryItem[]>(FALLBACK_COUNTRIES)
 
   // ── Dashboard tabs
-  const [dashTab, setDashTab] = useState<'colaboradores'|'configuracoes'>('colaboradores')
+  const [dashTab, setDashTab] = useState<'colaboradores'|'empresa'>('colaboradores')
+  const [showAppearancePanel, setShowAppearancePanel] = useState(false)
+
+  // ── Empresa editing
+  const [eNome, setENome] = useState('')
+  const [eNif,  setENif]  = useState('')
+  const [eTel,  setETel]  = useState('')
+  const [eRua,  setERua]  = useState('')
+  const [eNumero, setENumero] = useState('')
+  const [eAndar,  setEAndar]  = useState('')
+  const [eCP,     setECP]     = useState('')
+  const [eLocalidade, setELocalidade] = useState('')
+  const [eDistrito,   setEDistrito]   = useState('')
+  const [empresaMsg, setEmpresaMsg] = useState<string|null>(null)
 
   // ── Colaboradores
   const [colabSubTab, setColabSubTab] = useState<'ativos'|'inativos'>('ativos')
@@ -400,6 +413,22 @@ export default function App() {
     if (!chkTerms||!chkData) { setAlertState({type:'err',msg:'Aceite os Termos e o consentimento de dados.'}); return }
     const nova: Company = { name:regCompany, taxId:regTaxId, email:regEmail, pass:regPass, admin:regNome, tel:cfgPhone+' '+regTelNum, country:regCountry, address:{street:regStreet,number:regNumber,complement:regComplement,postalCode:regPostal,city:regCity,region:regRegion,state:regStateAddr}, dataConsent:true, consentDate:new Date().toISOString().split('T')[0] }
     setCompanies(prev=>[...prev,nova]); setSelectedCompany(nova); setSuccessTitle('Bem-vindo, '+regNome.split(' ')[0]+'!'); setSuccessSub('Empresa registada com sucesso'); goTo('success')
+  }
+
+  // ── Empresa helpers
+  function initEmpresaForm(c: Company) {
+    setENome(c.name); setENif(c.taxId); setETel(c.tel)
+    setERua(c.address.street); setENumero(c.address.number); setEAndar(c.address.complement)
+    setECP(c.address.postalCode); setELocalidade(c.address.city); setEDistrito(c.address.state)
+    setEmpresaMsg(null)
+  }
+  function saveEmpresa() {
+    if (!eNome.trim()) { setEmpresaMsg('err:Nome da empresa é obrigatório.'); return }
+    const updated: Company = { ...selectedCompany, name: eNome.trim(), taxId: eNif, tel: eTel, address: { ...selectedCompany.address, street: eRua, number: eNumero, complement: eAndar, postalCode: eCP, city: eLocalidade, state: eDistrito } }
+    setCompanies(prev => prev.map(c => c.email === selectedCompany.email ? updated : c))
+    setSelectedCompany(updated)
+    setEmpresaMsg('ok:Dados guardados com sucesso.')
+    setTimeout(() => setEmpresaMsg(null), 3000)
   }
 
   // ── Colaboradores helpers
@@ -783,40 +812,100 @@ export default function App() {
   // DASHBOARD
   // ════════════════════════════════════════════════════════════
   if (screen==='dashboard') {
-    // shared small button styles
     const btnSm = (bg: string, fg: string): React.CSSProperties => ({ height:'30px', padding:'0 10px', background:bg, border:'none', borderRadius:'6px', color:fg, fontSize:'12px', fontWeight:500, cursor:'pointer' })
     const btnMd = (bg: string, fg: string): React.CSSProperties => ({ height:'36px', padding:'0 14px', background:bg, border:'none', borderRadius:'8px', color:fg, fontSize:'13px', fontWeight:600, cursor:'pointer' })
 
+    const SIDEBAR_W = 220
+    const navItem = (icon: string, label: string, tab: 'colaboradores'|'empresa', disabled = false) => {
+      const active = dashTab === tab && !disabled
+      return (
+        <button key={label} disabled={disabled} onClick={()=>{ if(!disabled){ setDashTab(tab); if(tab==='empresa') initEmpresaForm(selectedCompany) } }}
+          style={{ display:'flex', alignItems:'center', gap:'10px', width:'100%', padding:'10px 14px', background: active ? 'rgba(255,255,255,.15)' : 'none', border:'none', borderLeft: active ? '3px solid #fff' : '3px solid transparent', borderRadius:0, color: disabled ? 'rgba(255,255,255,.3)' : active ? '#fff' : 'rgba(255,255,255,.7)', fontSize:'13px', fontWeight: active ? 700 : 400, cursor: disabled ? 'default' : 'pointer', textAlign:'left' as const }}>
+          <span style={{ fontSize:'16px', width:'20px', textAlign:'center' as const, flexShrink:0 }}>{icon}</span>
+          <span style={{ flex:1 }}>{label}</span>
+          {disabled && <span style={{ fontSize:'9px', background:'rgba(255,255,255,.15)', color:'rgba(255,255,255,.5)', borderRadius:'4px', padding:'1px 5px', fontWeight:400 }}>em breve</span>}
+        </button>
+      )
+    }
+
     return (
-      <div style={{ background:theme.bg, minHeight:'100vh', fontFamily:'system-ui, sans-serif' }}>
+      <div style={{ background:theme.bg, minHeight:'100vh', fontFamily:'system-ui, sans-serif', display:'flex' }}>
 
-        {/* ── Header ── */}
-        <div style={{ background:theme.nav, color:theme.navText, height:'56px', display:'flex', alignItems:'center', justifyContent:'space-between', padding:'0 1.5rem', position:'sticky', top:0, zIndex:100 }}>
-          <div style={{ display:'flex', alignItems:'center', gap:'10px' }}>
-            <div style={{ width:'32px', height:'32px', borderRadius:'8px', background:'rgba(255,255,255,.12)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'16px' }}>👥</div>
-            <span style={{ fontWeight:700, fontSize:'15px' }}>RH Gestão</span>
-            <span style={{ opacity:.4, fontSize:'13px' }}>|</span>
-            <span style={{ fontSize:'13px', opacity:.75 }}>{selectedCompany.name}</span>
+        {/* ══ SIDEBAR ══ */}
+        <div style={{ width:SIDEBAR_W, minWidth:SIDEBAR_W, background:theme.nav, display:'flex', flexDirection:'column', position:'fixed', left:0, top:0, bottom:0, zIndex:100, overflowY:'auto' }}>
+          {/* Logo */}
+          <div style={{ padding:'20px 16px 22px' }}>
+            <div style={{ display:'flex', alignItems:'center', gap:'10px', marginBottom:'8px' }}>
+              <div style={{ width:'34px', height:'34px', borderRadius:'9px', background:'rgba(255,255,255,.15)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'17px', flexShrink:0 }}>👥</div>
+              <span style={{ fontWeight:800, fontSize:'15px', color:'#fff', letterSpacing:'-.01em' }}>RH Gestão</span>
+            </div>
+            <p style={{ fontSize:'11px', color:'rgba(255,255,255,.5)', margin:'0 0 2px 0', paddingLeft:'44px', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{selectedCompany.name}</p>
+            <p style={{ fontSize:'11px', color:'rgba(255,255,255,.35)', margin:0, paddingLeft:'44px', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>👤 {selectedCompany.admin}</p>
           </div>
-          <div style={{ display:'flex', alignItems:'center', gap:'12px' }}>
-            <span style={{ fontSize:'13px', opacity:.75 }}>👤 {selectedCompany.admin}</span>
-            <button onClick={()=>{setColabView('list');setSelectedColab(null);setEditingColab(null);goTo('login')}} style={{ height:'32px', padding:'0 12px', background:'rgba(255,255,255,.12)', border:'1px solid rgba(255,255,255,.2)', borderRadius:'6px', color:theme.navText, fontSize:'13px', cursor:'pointer' }}>
-              Sair
+
+          {/* Nav */}
+          <nav style={{ flex:1, display:'flex', flexDirection:'column', gap:'2px', padding:'0 0 8px' }}>
+            {navItem('👥', 'Colaboradores', 'colaboradores')}
+            {navItem('🕐', 'Horários', 'colaboradores', true)}
+            {navItem('🌴', 'Férias', 'colaboradores', true)}
+            {navItem('⏱️', 'Banco de Horas', 'colaboradores', true)}
+            <div style={{ height:'1px', background:'rgba(255,255,255,.1)', margin:'8px 14px' }}/>
+            {navItem('🏢', 'Dados da Empresa', 'empresa')}
+            <button onClick={()=>setShowAppearancePanel(p=>!p)}
+              style={{ display:'flex', alignItems:'center', gap:'10px', width:'100%', padding:'10px 14px', background: showAppearancePanel ? 'rgba(255,255,255,.15)' : 'none', border:'none', borderLeft: showAppearancePanel ? '3px solid #fff' : '3px solid transparent', borderRadius:0, color: showAppearancePanel ? '#fff' : 'rgba(255,255,255,.7)', fontSize:'13px', fontWeight: showAppearancePanel ? 700 : 400, cursor:'pointer', textAlign:'left' as const }}>
+              <span style={{ fontSize:'16px', width:'20px', textAlign:'center' as const }}>🎨</span>
+              <span>Aparência</span>
+            </button>
+          </nav>
+
+          {/* Sair */}
+          <div style={{ padding:'12px 8px 16px' }}>
+            <button onClick={()=>{setColabView('list');setSelectedColab(null);setEditingColab(null);goTo('login')}}
+              style={{ display:'flex', alignItems:'center', gap:'10px', width:'100%', padding:'10px 14px', background:'rgba(255,255,255,.07)', border:'1px solid rgba(255,255,255,.12)', borderRadius:'8px', color:'rgba(255,255,255,.7)', fontSize:'13px', cursor:'pointer' }}>
+              <span style={{ fontSize:'16px' }}>🚪</span><span>Sair</span>
             </button>
           </div>
         </div>
 
-        {/* ── Main tabs ── */}
-        <div style={{ background:theme.card, borderBottom:'1px solid '+theme.border, padding:'0 1.5rem', display:'flex', gap:0 }}>
-          {(['colaboradores','configuracoes'] as const).map(tab=>(
-            <button key={tab} onClick={()=>setDashTab(tab)} style={{ height:'44px', padding:'0 18px', background:'none', border:'none', borderBottom:dashTab===tab?'2px solid '+theme.btn:'2px solid transparent', color:dashTab===tab?theme.btn:theme.textMuted, fontSize:'13px', fontWeight:dashTab===tab?700:400, cursor:'pointer' }}>
-              {tab==='colaboradores'?'👥 Colaboradores':'⚙️ Configurações'}
-            </button>
-          ))}
-        </div>
+        {/* ══ APPEARANCE PANEL (floating) ══ */}
+        {showAppearancePanel&&(
+          <div style={{ position:'fixed', left:SIDEBAR_W+12, top:'80px', zIndex:200, background:theme.card, border:'1px solid '+theme.border, borderRadius:'14px', padding:'1.25rem', width:'300px', boxShadow:'0 8px 32px rgba(0,0,0,.18)' }}>
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'1rem' }}>
+              <p style={{ fontWeight:700, fontSize:'14px', color:theme.text, margin:0 }}>🎨 Aparência</p>
+              <button onClick={()=>setShowAppearancePanel(false)} style={{ background:'none', border:'none', cursor:'pointer', fontSize:'16px', color:theme.textMuted, lineHeight:1 }}>✕</button>
+            </div>
+            {/* Theme circles */}
+            <p style={{ fontSize:'11px', fontWeight:700, color:theme.textMuted, textTransform:'uppercase', letterSpacing:'.05em', margin:'0 0 8px 0' }}>Tema</p>
+            <div style={{ display:'flex', gap:'8px', flexWrap:'wrap', marginBottom:'1rem' }}>
+              {Object.entries(THEMES).map(([key,t])=>(
+                <button key={key} title={THEME_LABELS[key]} onClick={()=>{setThemeName(key);setTheme(t)}}
+                  style={{ width:'36px', height:'36px', borderRadius:'50%', background:t.nav, border: themeName===key ? '3px solid '+theme.btn : '3px solid transparent', cursor:'pointer', outline: themeName===key ? '2px solid '+theme.btn : 'none', outlineOffset:'2px', position:'relative' as const, flexShrink:0 }}>
+                  {themeName===key&&<span style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center', fontSize:'13px', color:t.navText }}>✓</span>}
+                </button>
+              ))}
+            </div>
+            <div style={{ display:'flex', gap:'6px', marginBottom:'4px' }}>
+              {Object.entries(THEMES).map(([key])=>(
+                <span key={key} style={{ flex:1, fontSize:'9px', color:theme.textMuted, textAlign:'center' as const, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{THEME_LABELS[key]}</span>
+              ))}
+            </div>
+            {/* Color pickers */}
+            <p style={{ fontSize:'11px', fontWeight:700, color:theme.textMuted, textTransform:'uppercase', letterSpacing:'.05em', margin:'14px 0 8px 0' }}>Personalização</p>
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'8px' }}>
+              {([['Fundo','bg'],['Texto','text'],['Botões','btn'],['Menu','nav']] as [string,keyof Theme][]).map(([lbl,key])=>(
+                <div key={key} style={{ display:'flex', alignItems:'center', gap:'6px' }}>
+                  <input type="color" value={theme[key] as string} onChange={e=>{setTheme(prev=>({...prev,[key]:e.target.value}));setThemeName('custom')}}
+                    style={{ width:'32px', height:'32px', borderRadius:'6px', border:'1px solid '+theme.border, cursor:'pointer', padding:'2px', background:'transparent', flexShrink:0 }}/>
+                  <span style={{ fontSize:'11px', color:theme.textMuted }}>{lbl}</span>
+                </div>
+              ))}
+            </div>
+            <button onClick={()=>setShowAppearancePanel(false)} style={{ width:'100%', height:'36px', background:theme.btn, color:theme.btnText, border:'none', borderRadius:'8px', fontSize:'13px', fontWeight:600, cursor:'pointer', marginTop:'1rem' }}>Fechar</button>
+          </div>
+        )}
 
-        {/* ── Content ── */}
-        <div style={{ padding:'1.5rem' }}>
+        {/* ══ MAIN CONTENT ══ */}
+        <div style={{ marginLeft:SIDEBAR_W, flex:1, padding:'1.5rem', minHeight:'100vh' }}>
           <div style={{ maxWidth:'1100px', margin:'0 auto' }}>
 
             {/* ═══ COLABORADORES TAB ═══ */}
@@ -1128,61 +1217,46 @@ export default function App() {
               )}
             </>)}
 
-            {/* ═══ CONFIGURAÇÕES TAB ═══ */}
-            {dashTab==='configuracoes'&&(
+            {/* ═══ DADOS DA EMPRESA ═══ */}
+            {dashTab==='empresa'&&(
               <div>
-                <h2 style={{ ...T.title, marginBottom:'4px' }}>Configurações</h2>
-                <p style={{ ...T.sub, marginBottom:'1.5rem' }}>Personalize a aparência do sistema</p>
-
-                <div style={{ ...T.card2, padding:'1.5rem', marginBottom:'1.25rem' }}>
-                  <p style={T.sectionLbl}>Temas prontos</p>
-                  <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:'12px', marginBottom:'1.5rem' }}>
-                    {Object.entries(THEMES).map(([key,t])=>(
-                      <div key={key} onClick={()=>{setThemeName(key);setTheme(t)}} style={{ cursor:'pointer', borderRadius:'10px', overflow:'hidden', border:`2px solid ${themeName===key?theme.btn:theme.border}`, transition:'border-color .15s' }}>
-                        <div style={{ background:t.nav, padding:'8px 12px' }}>
-                          <span style={{ fontSize:'12px', fontWeight:700, color:t.navText }}>{THEME_LABELS[key]}</span>
-                        </div>
-                        <div style={{ background:t.bg, padding:'10px 12px' }}>
-                          <div style={{ height:'6px', width:'55%', borderRadius:'3px', background:t.btn, marginBottom:'6px' }}/>
-                          <div style={{ height:'4px', width:'75%', borderRadius:'2px', background:t.text, opacity:.25, marginBottom:'4px' }}/>
-                          <div style={{ height:'4px', width:'45%', borderRadius:'2px', background:t.text, opacity:.15 }}/>
-                        </div>
-                        {themeName===key&&<div style={{ background:theme.btn, padding:'3px 12px' }}><span style={{ fontSize:'11px', color:theme.btnText, fontWeight:600 }}>✓ Ativo</span></div>}
-                      </div>
-                    ))}
+                <h2 style={{ ...T.title, marginBottom:'4px' }}>Dados da Empresa</h2>
+                <p style={{ ...T.sub, marginBottom:'1.5rem' }}>Edite as informações da empresa logada</p>
+                {empresaMsg&&(
+                  <div style={{ ...(empresaMsg.startsWith('ok:') ? s.alertOk : s.alertErr), marginBottom:'1rem' }}>
+                    {empresaMsg.replace(/^(ok|err):/, '')}
                   </div>
-
-                  <p style={T.sectionLbl}>Personalização avançada</p>
-                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'14px', marginBottom:'1.5rem' }}>
-                    {([['Cor do fundo geral','bg'],['Cor do texto','text'],['Cor dos botões principais','btn'],['Cor do menu / navegação','nav']] as [string, keyof Theme][]).map(([lbl,key])=>(
-                      <div key={key}>
-                        <label style={T.label}>{lbl}</label>
-                        <div style={{ display:'flex', gap:'8px', alignItems:'center' }}>
-                          <input type="color" value={theme[key] as string} onChange={e=>{setTheme(prev=>({...prev,[key]:e.target.value}));setThemeName('custom')}} style={{ width:'48px', height:'38px', borderRadius:'8px', border:'1px solid '+theme.border, cursor:'pointer', padding:'2px', background:'transparent' }}/>
-                          <span style={{ fontSize:'12px', color:theme.textMuted, fontFamily:'monospace' }}>{theme[key]}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  <p style={T.sectionLbl}>Pré-visualização</p>
-                  <div style={{ border:'1px solid '+theme.border, borderRadius:'10px', overflow:'hidden', maxWidth:'340px' }}>
-                    <div style={{ background:theme.nav, color:theme.navText, padding:'10px 16px', display:'flex', alignItems:'center', gap:'8px' }}>
-                      <span style={{ fontSize:'14px' }}>👥</span>
-                      <span style={{ fontSize:'13px', fontWeight:700 }}>RH Gestão</span>
-                      <span style={{ opacity:.4 }}>|</span>
-                      <span style={{ fontSize:'12px', opacity:.75 }}>Empresa</span>
+                )}
+                <div style={{ ...T.card2, padding:'1.5rem', maxWidth:'680px' }}>
+                  <p style={T.sectionLbl}>Identificação</p>
+                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px', marginBottom:'0.875rem' }}>
+                    <div style={{ gridColumn:'1/-1' }}>
+                      <label style={T.label}>Nome da empresa *</label>
+                      <input style={T.input} type="text" placeholder="Nome da empresa" value={eNome} onChange={e=>setENome(e.target.value)}/>
                     </div>
-                    <div style={{ background:theme.bg, padding:'16px' }}>
-                      <p style={{ fontSize:'16px', fontWeight:700, color:theme.text, margin:'0 0 6px 0' }}>Colaboradores</p>
-                      <p style={{ fontSize:'13px', color:theme.textMuted, margin:'0 0 14px 0' }}>2 colaboradores ativos</p>
-                      <div style={{ background:theme.card, border:'1px solid '+theme.border, borderRadius:'8px', padding:'10px 12px', marginBottom:'10px' }}>
-                        <p style={{ fontSize:'13px', fontWeight:600, color:theme.text, margin:'0 0 2px 0' }}>Ana Costa</p>
-                        <p style={{ fontSize:'12px', color:theme.textMuted, margin:0 }}>Enfermeira · Clínica</p>
-                      </div>
-                      <button style={{ height:'34px', padding:'0 14px', background:theme.btn, color:theme.btnText, border:'none', borderRadius:'8px', fontSize:'13px', fontWeight:600, cursor:'default' }}>+ Adicionar colaborador</button>
+                    <div>
+                      <label style={T.label}>NIF</label>
+                      <input style={T.input} type="text" placeholder="NIF" value={eNif} onChange={e=>setENif(e.target.value)}/>
+                    </div>
+                    <div>
+                      <label style={T.label}>Telefone</label>
+                      <input style={T.input} type="tel" placeholder="+351 21 000 0000" value={eTel} onChange={e=>setETel(e.target.value)}/>
                     </div>
                   </div>
+                  <p style={{ ...T.sectionLbl, marginTop:'12px' }}>Morada</p>
+                  <div style={{ display:'grid', gridTemplateColumns:'2fr 1fr 1fr', gap:'10px', marginBottom:'0.875rem' }}>
+                    <div><label style={T.label}>Rua / Avenida</label><input style={T.input} type="text" placeholder="Ex: Rua Augusta" value={eRua} onChange={e=>setERua(e.target.value)}/></div>
+                    <div><label style={T.label}>Número</label><input style={T.input} type="text" placeholder="42" value={eNumero} onChange={e=>setENumero(e.target.value)}/></div>
+                    <div><label style={T.label}>Andar / Fração</label><input style={T.input} type="text" placeholder="2º Dto" value={eAndar} onChange={e=>setEAndar(e.target.value)}/></div>
+                  </div>
+                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:'10px', marginBottom:'1.5rem' }}>
+                    <div><label style={T.label}>Código Postal</label><input style={T.input} type="text" placeholder="1100-150" value={eCP} onChange={e=>setECP(e.target.value)}/></div>
+                    <div><label style={T.label}>Localidade</label><input style={T.input} type="text" placeholder="Lisboa" value={eLocalidade} onChange={e=>setELocalidade(e.target.value)}/></div>
+                    <div><label style={T.label}>Distrito</label><input style={T.input} type="text" placeholder="Lisboa" value={eDistrito} onChange={e=>setEDistrito(e.target.value)}/></div>
+                  </div>
+                  <button onClick={saveEmpresa} style={{ height:'40px', padding:'0 24px', background:theme.btn, color:theme.btnText, border:'none', borderRadius:'8px', fontSize:'14px', fontWeight:700, cursor:'pointer' }}>
+                    Guardar alterações
+                  </button>
                 </div>
               </div>
             )}
