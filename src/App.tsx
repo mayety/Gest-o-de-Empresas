@@ -308,6 +308,15 @@ export default function App() {
   const [eDistrito,   setEDistrito]   = useState('')
   const [empresaMsg, setEmpresaMsg] = useState<string|null>(null)
 
+  // ── Responsive
+  const [winW, setWinW] = useState(() => window.innerWidth)
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+  useEffect(() => {
+    const onResize = () => { setWinW(window.innerWidth); if (window.innerWidth >= 768) setSidebarOpen(false) }
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+
   // ── Colaboradores
   const [colabSubTab, setColabSubTab] = useState<'ativos'|'inativos'>('ativos')
   const [colabView, setColabView] = useState<'list'|'form'|'detail'>('list')
@@ -817,15 +826,21 @@ export default function App() {
     const btnSm = (bg: string, fg: string): React.CSSProperties => ({ height:'30px', padding:'0 10px', background:bg, border:'none', borderRadius:'6px', color:fg, fontSize:'12px', fontWeight:500, cursor:'pointer' })
     const btnMd = (bg: string, fg: string): React.CSSProperties => ({ height:'36px', padding:'0 14px', background:bg, border:'none', borderRadius:'8px', color:fg, fontSize:'13px', fontWeight:600, cursor:'pointer' })
 
-    const SIDEBAR_W = 220
+    const isMobile  = winW < 768
+    const isTablet  = winW >= 768 && winW < 1024
+    const SIDEBAR_W = isTablet ? 64 : 220
+    const TOPBAR_H  = 56
+
     const navItem = (icon: string, label: string, tab: 'colaboradores'|'empresa', disabled = false) => {
-      const active = dashTab === tab && !disabled
+      const active    = dashTab === tab && !disabled
+      const collapsed = isTablet
       return (
-        <button key={label} disabled={disabled} onClick={()=>{ if(!disabled){ setDashTab(tab); if(tab==='empresa') initEmpresaForm(selectedCompany) } }}
-          style={{ display:'flex', alignItems:'center', gap:'10px', width:'100%', padding:'10px 14px', background: active ? 'rgba(255,255,255,.15)' : 'none', border:'none', borderLeft: active ? '3px solid #fff' : '3px solid transparent', borderRadius:0, color: disabled ? 'rgba(255,255,255,.3)' : active ? '#fff' : 'rgba(255,255,255,.7)', fontSize:'13px', fontWeight: active ? 700 : 400, cursor: disabled ? 'default' : 'pointer', textAlign:'left' as const }}>
-          <span style={{ fontSize:'16px', width:'20px', textAlign:'center' as const, flexShrink:0 }}>{icon}</span>
-          <span style={{ flex:1 }}>{label}</span>
-          {disabled && <span style={{ fontSize:'9px', background:'rgba(255,255,255,.15)', color:'rgba(255,255,255,.5)', borderRadius:'4px', padding:'1px 5px', fontWeight:400 }}>em breve</span>}
+        <button key={label} disabled={disabled} title={collapsed ? label : undefined}
+          onClick={()=>{ if(!disabled){ setDashTab(tab); if(tab==='empresa') initEmpresaForm(selectedCompany); if(isMobile) setSidebarOpen(false) } }}
+          style={{ display:'flex', alignItems:'center', justifyContent: collapsed ? 'center' : 'flex-start', gap: collapsed ? 0 : '10px', width:'100%', padding: collapsed ? '12px 0' : '10px 14px', background: active ? 'rgba(255,255,255,.15)' : 'none', border:'none', borderLeft: active && !collapsed ? '3px solid #fff' : collapsed ? 'none' : '3px solid transparent', borderRight:'none', borderTop:'none', borderBottom:'none', borderRadius:0, color: disabled ? 'rgba(255,255,255,.3)' : active ? '#fff' : 'rgba(255,255,255,.7)', fontSize:'13px', fontWeight: active ? 700 : 400, cursor: disabled ? 'default' : 'pointer', textAlign: collapsed ? 'center' as const : 'left' as const }}>
+          <span style={{ fontSize: collapsed ? '19px' : '16px', width: collapsed ? 'auto' : '20px', textAlign:'center' as const, flexShrink:0 }}>{icon}</span>
+          {!collapsed && <span style={{ flex:1 }}>{label}</span>}
+          {!collapsed && disabled && <span style={{ fontSize:'9px', background:'rgba(255,255,255,.15)', color:'rgba(255,255,255,.5)', borderRadius:'4px', padding:'1px 5px', fontWeight:400 }}>em breve</span>}
         </button>
       )
     }
@@ -833,17 +848,45 @@ export default function App() {
     return (
       <div style={{ background:theme.bg, minHeight:'100vh', fontFamily:'system-ui, sans-serif', display:'flex' }}>
 
-        {/* ══ SIDEBAR ══ */}
-        <div style={{ width:SIDEBAR_W, minWidth:SIDEBAR_W, background:theme.nav, display:'flex', flexDirection:'column', position:'fixed', left:0, top:0, bottom:0, zIndex:100, overflowY:'auto' }}>
-          {/* Logo */}
-          <div style={{ padding:'20px 16px 22px' }}>
-            <div style={{ display:'flex', alignItems:'center', gap:'10px', marginBottom:'8px' }}>
-              <div style={{ width:'34px', height:'34px', borderRadius:'9px', background:'rgba(255,255,255,.15)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'17px', flexShrink:0 }}>👥</div>
-              <span style={{ fontWeight:800, fontSize:'15px', color:'#fff', letterSpacing:'-.01em' }}>RH Gestão</span>
+        {/* ══ MOBILE TOP BAR ══ */}
+        {isMobile&&(
+          <div style={{ position:'fixed', top:0, left:0, right:0, height:TOPBAR_H, background:theme.nav, display:'flex', alignItems:'center', gap:'12px', padding:'0 16px', zIndex:120 }}>
+            <button onClick={()=>setSidebarOpen(o=>!o)} style={{ background:'none', border:'none', cursor:'pointer', display:'flex', flexDirection:'column', gap:'5px', padding:'4px', flexShrink:0 }}>
+              <span style={{ display:'block', width:'22px', height:'2px', background:'#fff', borderRadius:'2px', transition:'transform .2s', transform: sidebarOpen ? 'translateY(7px) rotate(45deg)' : 'none' }}/>
+              <span style={{ display:'block', width:'22px', height:'2px', background:'#fff', borderRadius:'2px', opacity: sidebarOpen ? 0 : 1, transition:'opacity .15s' }}/>
+              <span style={{ display:'block', width:'22px', height:'2px', background:'#fff', borderRadius:'2px', transition:'transform .2s', transform: sidebarOpen ? 'translateY(-7px) rotate(-45deg)' : 'none' }}/>
+            </button>
+            <div style={{ display:'flex', alignItems:'center', gap:'8px' }}>
+              <div style={{ width:'28px', height:'28px', borderRadius:'7px', background:'rgba(255,255,255,.15)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'14px' }}>👥</div>
+              <span style={{ fontWeight:800, fontSize:'14px', color:'#fff' }}>RH Gestão</span>
             </div>
-            <p style={{ fontSize:'11px', color:'rgba(255,255,255,.5)', margin:'0 0 2px 0', paddingLeft:'44px', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{selectedCompany.name}</p>
-            <p style={{ fontSize:'11px', color:'rgba(255,255,255,.35)', margin:0, paddingLeft:'44px', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>👤 {selectedCompany.admin}</p>
+            <span style={{ fontSize:'12px', color:'rgba(255,255,255,.5)', flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{selectedCompany.name}</span>
           </div>
+        )}
+
+        {/* ══ MOBILE OVERLAY ══ */}
+        {isMobile&&sidebarOpen&&(
+          <div onClick={()=>setSidebarOpen(false)} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.45)', zIndex:110 }}/>
+        )}
+
+        {/* ══ SIDEBAR ══ */}
+        <div style={{ width:SIDEBAR_W, minWidth:SIDEBAR_W, background:theme.nav, display:'flex', flexDirection:'column', position:'fixed', left: isMobile && !sidebarOpen ? -SIDEBAR_W : 0, top:0, bottom:0, zIndex:115, overflowY:'auto', transition: isMobile ? 'left .25s ease' : 'width .2s ease' }}>
+          {/* Logo */}
+          {!isTablet&&(
+            <div style={{ padding:'20px 16px 22px' }}>
+              <div style={{ display:'flex', alignItems:'center', gap:'10px', marginBottom:'8px' }}>
+                <div style={{ width:'34px', height:'34px', borderRadius:'9px', background:'rgba(255,255,255,.15)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'17px', flexShrink:0 }}>👥</div>
+                <span style={{ fontWeight:800, fontSize:'15px', color:'#fff', letterSpacing:'-.01em' }}>RH Gestão</span>
+              </div>
+              <p style={{ fontSize:'11px', color:'rgba(255,255,255,.5)', margin:'0 0 2px 0', paddingLeft:'44px', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{selectedCompany.name}</p>
+              <p style={{ fontSize:'11px', color:'rgba(255,255,255,.35)', margin:0, paddingLeft:'44px', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>👤 {selectedCompany.admin}</p>
+            </div>
+          )}
+          {isTablet&&(
+            <div style={{ padding:'18px 0 14px', display:'flex', justifyContent:'center' }}>
+              <div style={{ width:'36px', height:'36px', borderRadius:'9px', background:'rgba(255,255,255,.15)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'18px' }}>👥</div>
+            </div>
+          )}
 
           {/* Nav */}
           <nav style={{ flex:1, display:'flex', flexDirection:'column', gap:'2px', padding:'0 0 8px' }}>
@@ -853,25 +896,27 @@ export default function App() {
             {navItem('⏱️', 'Banco de Horas', 'colaboradores', true)}
             <div style={{ height:'1px', background:'rgba(255,255,255,.1)', margin:'8px 14px' }}/>
             {navItem('🏢', 'Dados da Empresa', 'empresa')}
-            <button onClick={()=>setShowAppearancePanel(p=>!p)}
-              style={{ display:'flex', alignItems:'center', gap:'10px', width:'100%', padding:'10px 14px', background: showAppearancePanel ? 'rgba(255,255,255,.15)' : 'none', border:'none', borderLeft: showAppearancePanel ? '3px solid #fff' : '3px solid transparent', borderRadius:0, color: showAppearancePanel ? '#fff' : 'rgba(255,255,255,.7)', fontSize:'13px', fontWeight: showAppearancePanel ? 700 : 400, cursor:'pointer', textAlign:'left' as const }}>
-              <span style={{ fontSize:'16px', width:'20px', textAlign:'center' as const }}>🎨</span>
-              <span>Aparência</span>
+            <button title={isTablet ? 'Aparência' : undefined} onClick={()=>{setShowAppearancePanel(p=>!p); if(isMobile) setSidebarOpen(false)}}
+              style={{ display:'flex', alignItems:'center', justifyContent: isTablet ? 'center' : 'flex-start', gap: isTablet ? 0 : '10px', width:'100%', padding: isTablet ? '12px 0' : '10px 14px', background: showAppearancePanel ? 'rgba(255,255,255,.15)' : 'none', border:'none', borderLeft: showAppearancePanel && !isTablet ? '3px solid #fff' : isTablet ? 'none' : '3px solid transparent', borderRight:'none', borderTop:'none', borderBottom:'none', borderRadius:0, color: showAppearancePanel ? '#fff' : 'rgba(255,255,255,.7)', fontSize:'13px', fontWeight: showAppearancePanel ? 700 : 400, cursor:'pointer', textAlign: isTablet ? 'center' as const : 'left' as const }}>
+              <span style={{ fontSize: isTablet ? '19px' : '16px', width: isTablet ? 'auto' : '20px', textAlign:'center' as const }}>🎨</span>
+              {!isTablet&&<span>Aparência</span>}
             </button>
           </nav>
 
           {/* Sair */}
-          <div style={{ padding:'12px 8px 16px' }}>
+          <div style={{ padding: isTablet ? '12px 8px 16px' : '12px 8px 16px' }}>
             <button onClick={()=>{setColabView('list');setSelectedColab(null);setEditingColab(null);goTo('login')}}
-              style={{ display:'flex', alignItems:'center', gap:'10px', width:'100%', padding:'10px 14px', background:'rgba(255,255,255,.07)', border:'1px solid rgba(255,255,255,.12)', borderRadius:'8px', color:'rgba(255,255,255,.7)', fontSize:'13px', cursor:'pointer' }}>
-              <span style={{ fontSize:'16px' }}>🚪</span><span>Sair</span>
+              title={isTablet ? 'Sair' : undefined}
+              style={{ display:'flex', alignItems:'center', justifyContent: isTablet ? 'center' : 'flex-start', gap: isTablet ? 0 : '10px', width:'100%', padding: isTablet ? '12px 0' : '10px 14px', background:'rgba(255,255,255,.07)', border:'1px solid rgba(255,255,255,.12)', borderRadius:'8px', color:'rgba(255,255,255,.7)', fontSize:'13px', cursor:'pointer' }}>
+              <span style={{ fontSize: isTablet ? '19px' : '16px' }}>🚪</span>
+              {!isTablet&&<span>Sair</span>}
             </button>
           </div>
         </div>
 
         {/* ══ APPEARANCE PANEL (floating) ══ */}
         {showAppearancePanel&&(
-          <div style={{ position:'fixed', left:SIDEBAR_W+12, top:'80px', zIndex:200, background:theme.card, border:'1px solid '+theme.border, borderRadius:'14px', padding:'1.25rem', width:'300px', boxShadow:'0 8px 32px rgba(0,0,0,.18)' }}>
+          <div style={{ position:'fixed', left: isMobile ? 12 : SIDEBAR_W+12, right: isMobile ? 12 : 'auto', top: isMobile ? TOPBAR_H+8 : 80, zIndex:200, background:theme.card, border:'1px solid '+theme.border, borderRadius:'14px', padding:'1.25rem', width: isMobile ? 'auto' : '300px', boxShadow:'0 8px 32px rgba(0,0,0,.18)' }}>
             <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'1rem' }}>
               <p style={{ fontWeight:700, fontSize:'14px', color:theme.text, margin:0 }}>🎨 Aparência</p>
               <button onClick={()=>setShowAppearancePanel(false)} style={{ background:'none', border:'none', cursor:'pointer', fontSize:'16px', color:theme.textMuted, lineHeight:1 }}>✕</button>
@@ -907,7 +952,7 @@ export default function App() {
         )}
 
         {/* ══ MAIN CONTENT ══ */}
-        <div style={{ marginLeft:SIDEBAR_W, flex:1, padding:'1.5rem', minHeight:'100vh' }}>
+        <div style={{ marginLeft: isMobile ? 0 : SIDEBAR_W, flex:1, padding: isMobile ? '1rem' : '1.5rem', paddingTop: isMobile ? TOPBAR_H+16 : '1.5rem', minHeight:'100vh', minWidth:0 }}>
           <div style={{ maxWidth:'1100px', margin:'0 auto' }}>
 
             {/* ═══ COLABORADORES TAB ═══ */}
@@ -992,13 +1037,13 @@ export default function App() {
                       {paginatedAtivos.map((c,i)=>(
                         <div key={c.id} style={{ borderBottom:i<paginatedAtivos.length-1?'1px solid '+theme.border:'none' }}>
                           {/* Accordion header */}
-                          <div onClick={()=>setExpandedColabId(expandedColabId===c.id?null:c.id)} style={{ display:'flex', alignItems:'center', gap:'12px', padding:'10px 16px', cursor:'pointer' }}>
+                          <div onClick={()=>setExpandedColabId(expandedColabId===c.id?null:c.id)} style={{ display:'flex', alignItems:'center', gap:'12px', padding:'3px 16px', cursor:'pointer' }}>
                             <div style={{ width:'32px', height:'32px', borderRadius:'50%', background:theme.bg, display:'flex', alignItems:'center', justifyContent:'center', fontSize:'13px', fontWeight:700, color:theme.btn, flexShrink:0 }}>{c.nome.charAt(0)}</div>
                             <div style={{ flex:1, minWidth:0 }}>
                               <p style={{ fontSize:'13px', fontWeight:700, color:theme.text, margin:0 }}>{c.nome}</p>
                               <p style={{ fontSize:'11px', color:theme.textMuted, margin:'1px 0 0 0' }}>{c.cargo} · {c.departamento}</p>
                             </div>
-                            <span style={{ fontSize:'12px', color:theme.textMuted, transition:'transform .2s', display:'inline-block', transform:expandedColabId===c.id?'rotate(90deg)':'none' }}>►</span>
+                            <span style={{ fontSize:'20px', color:theme.textMuted, opacity:.55, transition:'transform .25s ease', display:'inline-block', transform:expandedColabId===c.id?'rotate(90deg)':'rotate(0deg)', lineHeight:1, userSelect:'none' }}>›</span>
                           </div>
                           {/* Accordion body */}
                           {expandedColabId===c.id&&(
