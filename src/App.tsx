@@ -1047,8 +1047,8 @@ export default function App() {
                           </div>
                           {/* Accordion body */}
                           {expandedColabId===c.id&&(
-                            <div style={{ padding:'0 16px 12px 64px', borderTop:'1px solid '+theme.border, background:theme.bg }}>
-                              <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:'12px 20px', margin:'10px 0' }}>
+                            <div style={{ padding: isMobile ? '0 12px 12px 12px' : '0 16px 12px 64px', borderTop:'1px solid '+theme.border, background:theme.bg }}>
+                              <div style={{ display:'grid', gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : 'repeat(3,1fr)', gap:'10px 16px', margin:'10px 0' }}>
                                 {[['Contrato',CONTRATO_LABELS[c.tipoContrato]],['Admissão',c.dataAdmissao],['Telefone',c.telefone],['E-mail',c.email]].map(([lbl,val])=>(
                                   <div key={lbl}>
                                     <p style={{ fontSize:'10px', fontWeight:700, color:theme.textMuted, textTransform:'uppercase', letterSpacing:'.05em', margin:'0 0 2px 0' }}>{lbl}</p>
@@ -1121,19 +1121,19 @@ export default function App() {
                   <div style={{ ...T.card2, padding:'1.5rem' }}>
                     {formColabErr&&<div style={{ ...s.alertErr, marginBottom:'12px' }}>{formColabErr}</div>}
                     <p style={T.sectionLbl}>Dados profissionais</p>
-                    <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px', marginBottom:'0.875rem' }}>
+                    <div style={{ display:'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap:'10px', marginBottom:'0.875rem' }}>
                       <div><label style={T.label}>Nome completo *</label><input style={T.input} type="text" placeholder="Ex: Ana Costa" value={fNome} onChange={e=>setFNome(e.target.value)}/></div>
                       <div><label style={T.label}>NIF *</label><input style={T.input} type="text" placeholder="NIF" value={fNif} onChange={e=>setFNif(e.target.value)}/></div>
                     </div>
-                    <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px', marginBottom:'0.875rem' }}>
+                    <div style={{ display:'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap:'10px', marginBottom:'0.875rem' }}>
                       <div><label style={T.label}>Cargo *</label><input style={T.input} type="text" placeholder="Ex: Enfermeira" value={fCargo} onChange={e=>setFCargo(e.target.value)}/></div>
                       <div><label style={T.label}>Departamento *</label><input style={T.input} type="text" placeholder="Ex: Clínica" value={fDept} onChange={e=>setFDept(e.target.value)}/></div>
                     </div>
-                    <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px', marginBottom:'0.875rem' }}>
+                    <div style={{ display:'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap:'10px', marginBottom:'0.875rem' }}>
                       <div><label style={T.label}>E-mail *</label><input style={T.input} type="email" placeholder="colaborador@empresa.pt" value={fEmail} onChange={e=>setFEmail(e.target.value)}/></div>
                       <div><label style={T.label}>Telefone *</label><input style={T.input} type="tel" placeholder="+351 912 000 000" value={fTel} onChange={e=>setFTel(e.target.value)}/></div>
                     </div>
-                    <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px', marginBottom:'0.875rem' }}>
+                    <div style={{ display:'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap:'10px', marginBottom:'0.875rem' }}>
                       <div><label style={T.label}>Data de admissão *</label><input style={T.input} type="date" value={fDataAdm} onChange={e=>setFDataAdm(e.target.value)}/></div>
                       <div>
                         <label style={T.label}>Tipo de contrato</label>
@@ -1143,15 +1143,15 @@ export default function App() {
                       </div>
                     </div>
                     <p style={{ ...T.sectionLbl, marginTop:'12px' }}>Morada</p>
-                    <div style={{ display:'grid', gridTemplateColumns:'2fr 1fr 1fr', gap:'10px', marginBottom:'0.875rem' }}>
-                      <div><label style={T.label}>Rua / Avenida</label><input style={T.input} type="text" placeholder="Ex: Rua das Flores" value={fRua} onChange={e=>setFRua(e.target.value)}/></div>
+                    <div style={{ display:'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : '2fr 1fr 1fr', gap:'10px', marginBottom:'0.875rem' }}>
+                      <div style={{ gridColumn: isMobile ? '1/-1' : 'auto' }}><label style={T.label}>Rua / Avenida</label><input style={T.input} type="text" placeholder="Ex: Rua das Flores" value={fRua} onChange={e=>setFRua(e.target.value)}/></div>
                       <div><label style={T.label}>Número</label><input style={T.input} type="text" placeholder="10" value={fNumero} onChange={e=>setFNumero(e.target.value)}/></div>
                       <div><label style={T.label}>Andar / Fração</label><input style={T.input} type="text" placeholder="1º Esq" value={fAndar} onChange={e=>setFAndar(e.target.value)}/></div>
                     </div>
-                    <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:'10px', marginBottom:'1.5rem' }}>
+                    <div style={{ display:'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : '1fr 1fr 1fr', gap:'10px', marginBottom:'1.5rem' }}>
                       <div><label style={T.label}>Código Postal</label><input style={T.input} type="text" placeholder="1100-150" value={fCP} onChange={e=>setFCP(e.target.value)}/></div>
                       <div><label style={T.label}>Localidade</label><input style={T.input} type="text" placeholder="Lisboa" value={fLocalidade} onChange={e=>setFLocalidade(e.target.value)}/></div>
-                      <div><label style={T.label}>Distrito</label><input style={T.input} type="text" placeholder="Lisboa" value={fDistrito} onChange={e=>setFDistrito(e.target.value)}/></div>
+                      <div style={{ gridColumn: isMobile ? '1/-1' : 'auto' }}><label style={T.label}>Distrito</label><input style={T.input} type="text" placeholder="Lisboa" value={fDistrito} onChange={e=>setFDistrito(e.target.value)}/></div>
                     </div>
                     <div style={{ display:'flex', gap:'8px' }}>
                       <button onClick={editingColab?atualizarColaborador:adicionarColaborador} style={{ flex:1, height:'40px', background:theme.btn, border:'none', borderRadius:'8px', color:theme.btnText, fontSize:'14px', fontWeight:700, cursor:'pointer' }}>
@@ -1170,18 +1170,20 @@ export default function App() {
                 <div>
                   <button onClick={()=>{setColabView('list');setSelectedColab(null)}} style={T.backBtn}><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M9 11L5 7l4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>Voltar à lista</button>
                   {/* Header card */}
-                  <div style={{ ...T.card2, padding:'1.25rem 1.5rem', marginBottom:'1rem', display:'flex', alignItems:'center', gap:'16px' }}>
-                    <div style={{ width:'52px', height:'52px', borderRadius:'50%', background:theme.bg, display:'flex', alignItems:'center', justifyContent:'center', fontSize:'20px', fontWeight:700, color:theme.btn, flexShrink:0 }}>{selectedColab.nome.charAt(0)}</div>
-                    <div style={{ flex:1 }}>
-                      <h2 style={{ ...T.title, fontSize:'18px', marginBottom:'4px' }}>{selectedColab.nome}</h2>
-                      <p style={{ fontSize:'13px', color:theme.textMuted, margin:0 }}>
-                        {selectedColab.cargo} · {selectedColab.departamento}
-                        <span style={{ marginLeft:'8px', background:theme.bg, borderRadius:'20px', padding:'2px 8px', fontSize:'12px', border:'1px solid '+theme.border }}>{CONTRATO_LABELS[selectedColab.tipoContrato]}</span>
-                      </p>
-                    </div>
-                    <div style={{ display:'flex', gap:'8px' }}>
-                      <button onClick={()=>iniciarEdicao(selectedColab)} style={btnMd(theme.bg,theme.text)}>✏️ Editar</button>
-                      <button onClick={()=>{setDeactivateTarget(selectedColab.id);setDeactivateDate('');setDeactivateMotivo(MOTIVO_SAIDA[0]);setDeactivateErr('')}} style={btnMd('#fff3cd','#92400e')}>Desativar</button>
+                  <div style={{ ...T.card2, padding:'1rem 1.25rem', marginBottom:'1rem' }}>
+                    <div style={{ display:'flex', alignItems: isMobile ? 'flex-start' : 'center', gap:'14px', flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
+                      <div style={{ width:'48px', height:'48px', borderRadius:'50%', background:theme.bg, display:'flex', alignItems:'center', justifyContent:'center', fontSize:'18px', fontWeight:700, color:theme.btn, flexShrink:0 }}>{selectedColab.nome.charAt(0)}</div>
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <h2 style={{ ...T.title, fontSize:'17px', marginBottom:'3px' }}>{selectedColab.nome}</h2>
+                        <p style={{ fontSize:'12px', color:theme.textMuted, margin:0, display:'flex', flexWrap:'wrap', gap:'4px', alignItems:'center' }}>
+                          <span>{selectedColab.cargo} · {selectedColab.departamento}</span>
+                          <span style={{ background:theme.bg, borderRadius:'20px', padding:'2px 7px', fontSize:'11px', border:'1px solid '+theme.border }}>{CONTRATO_LABELS[selectedColab.tipoContrato]}</span>
+                        </p>
+                      </div>
+                      <div style={{ display:'flex', gap:'8px', flexShrink:0, width: isMobile ? '100%' : 'auto' }}>
+                        <button onClick={()=>iniciarEdicao(selectedColab)} style={{ ...btnMd(theme.bg,theme.text), flex: isMobile ? 1 : 'none' }}>✏️ Editar</button>
+                        <button onClick={()=>{setDeactivateTarget(selectedColab.id);setDeactivateDate('');setDeactivateMotivo(MOTIVO_SAIDA[0]);setDeactivateErr('')}} style={{ ...btnMd('#fff3cd','#92400e'), flex: isMobile ? 1 : 'none' }}>Desativar</button>
+                      </div>
                     </div>
                   </div>
                   {/* Detail tabs */}
@@ -1196,7 +1198,7 @@ export default function App() {
                     {colabDetailTab==='dados'&&(
                       <div style={{ padding:'1.5rem' }}>
                         <p style={T.sectionLbl}>Dados profissionais</p>
-                        <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:'20px 24px', marginBottom:'1.5rem' }}>
+                        <div style={{ display:'grid', gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : 'repeat(3,1fr)', gap:'16px 20px', marginBottom:'1.5rem' }}>
                           <InfoField label="Nome" value={selectedColab.nome} color={theme.text}/>
                           <InfoField label="NIF" value={selectedColab.nif} color={theme.text}/>
                           <InfoField label="Cargo" value={selectedColab.cargo} color={theme.text}/>
@@ -1205,12 +1207,12 @@ export default function App() {
                           <InfoField label="Tipo de contrato" value={CONTRATO_LABELS[selectedColab.tipoContrato]} color={theme.text}/>
                         </div>
                         <p style={T.sectionLbl}>Contactos</p>
-                        <div style={{ display:'grid', gridTemplateColumns:'repeat(2,1fr)', gap:'20px 24px', marginBottom:'1.5rem' }}>
+                        <div style={{ display:'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2,1fr)', gap:'16px 20px', marginBottom:'1.5rem' }}>
                           <InfoField label="E-mail" value={selectedColab.email} color={theme.text}/>
                           <InfoField label="Telefone" value={selectedColab.telefone} color={theme.text}/>
                         </div>
                         <p style={T.sectionLbl}>Morada</p>
-                        <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:'20px 24px' }}>
+                        <div style={{ display:'grid', gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : 'repeat(3,1fr)', gap:'16px 20px' }}>
                           <InfoField label="Rua / Avenida" value={selectedColab.morada.rua} color={theme.text}/>
                           <InfoField label="Número" value={selectedColab.morada.numero} color={theme.text}/>
                           <InfoField label="Andar / Fração" value={selectedColab.morada.andar} color={theme.text}/>
@@ -1228,12 +1230,12 @@ export default function App() {
                           <div style={{ display:'grid', gridTemplateColumns:'1fr', gap:'10px', marginBottom:'10px' }}>
                             <div><label style={T.label}>Nome do documento *</label><input style={T.input} type="text" placeholder="Ex: Contrato 2024, BI frente, Recibo março" value={uploadNome} onChange={e=>setUploadNome(e.target.value)}/></div>
                           </div>
-                          <div style={{ display:'flex', gap:'10px', alignItems:'flex-end' }}>
+                          <div style={{ display:'flex', flexDirection: isMobile ? 'column' : 'row', gap:'10px', alignItems: isMobile ? 'stretch' : 'flex-end' }}>
                             <div style={{ flex:1 }}>
                               <label style={T.label}>Ficheiro * (PDF, JPG, JPEG, PNG)</label>
-                              <div style={{ display:'flex', gap:'8px', alignItems:'center' }}>
+                              <div style={{ display:'flex', gap:'8px', alignItems:'center', flexWrap:'wrap' }}>
                                 <button onClick={()=>fileInputRef.current?.click()} style={{ height:'38px', padding:'0 14px', background:theme.card, border:'1px solid '+theme.border, borderRadius:'8px', color:theme.text, fontSize:'13px', cursor:'pointer', whiteSpace:'nowrap' as const }}>📎 Escolher ficheiro</button>
-                                <span style={{ fontSize:'13px', color:uploadFile?theme.text:theme.textMuted }}>{uploadFile?uploadFile.name:'Nenhum ficheiro selecionado'}</span>
+                                <span style={{ fontSize:'12px', color:uploadFile?theme.text:theme.textMuted, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', maxWidth:'160px' }}>{uploadFile?uploadFile.name:'Nenhum ficheiro selecionado'}</span>
                                 <input ref={fileInputRef} type="file" accept=".pdf,.jpg,.jpeg,.png" style={{ display:'none' }} onChange={e=>setUploadFile(e.target.files?.[0]??null)}/>
                               </div>
                             </div>
@@ -1281,7 +1283,7 @@ export default function App() {
                 )}
                 <div style={{ ...T.card2, padding:'1.5rem', maxWidth:'680px' }}>
                   <p style={T.sectionLbl}>Identificação</p>
-                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px', marginBottom:'0.875rem' }}>
+                  <div style={{ display:'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap:'10px', marginBottom:'0.875rem' }}>
                     <div style={{ gridColumn:'1/-1' }}>
                       <label style={T.label}>Nome da empresa *</label>
                       <input style={T.input} type="text" placeholder="Nome da empresa" value={eNome} onChange={e=>setENome(e.target.value)}/>
@@ -1296,15 +1298,15 @@ export default function App() {
                     </div>
                   </div>
                   <p style={{ ...T.sectionLbl, marginTop:'12px' }}>Morada</p>
-                  <div style={{ display:'grid', gridTemplateColumns:'2fr 1fr 1fr', gap:'10px', marginBottom:'0.875rem' }}>
-                    <div><label style={T.label}>Rua / Avenida</label><input style={T.input} type="text" placeholder="Ex: Rua Augusta" value={eRua} onChange={e=>setERua(e.target.value)}/></div>
+                  <div style={{ display:'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : '2fr 1fr 1fr', gap:'10px', marginBottom:'0.875rem' }}>
+                    <div style={{ gridColumn: isMobile ? '1/-1' : 'auto' }}><label style={T.label}>Rua / Avenida</label><input style={T.input} type="text" placeholder="Ex: Rua Augusta" value={eRua} onChange={e=>setERua(e.target.value)}/></div>
                     <div><label style={T.label}>Número</label><input style={T.input} type="text" placeholder="42" value={eNumero} onChange={e=>setENumero(e.target.value)}/></div>
                     <div><label style={T.label}>Andar / Fração</label><input style={T.input} type="text" placeholder="2º Dto" value={eAndar} onChange={e=>setEAndar(e.target.value)}/></div>
                   </div>
-                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:'10px', marginBottom:'1.5rem' }}>
+                  <div style={{ display:'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : '1fr 1fr 1fr', gap:'10px', marginBottom:'1.5rem' }}>
                     <div><label style={T.label}>Código Postal</label><input style={T.input} type="text" placeholder="1100-150" value={eCP} onChange={e=>setECP(e.target.value)}/></div>
                     <div><label style={T.label}>Localidade</label><input style={T.input} type="text" placeholder="Lisboa" value={eLocalidade} onChange={e=>setELocalidade(e.target.value)}/></div>
-                    <div><label style={T.label}>Distrito</label><input style={T.input} type="text" placeholder="Lisboa" value={eDistrito} onChange={e=>setEDistrito(e.target.value)}/></div>
+                    <div style={{ gridColumn: isMobile ? '1/-1' : 'auto' }}><label style={T.label}>Distrito</label><input style={T.input} type="text" placeholder="Lisboa" value={eDistrito} onChange={e=>setEDistrito(e.target.value)}/></div>
                   </div>
                   <button onClick={saveEmpresa} style={{ height:'40px', padding:'0 24px', background:theme.btn, color:theme.btnText, border:'none', borderRadius:'8px', fontSize:'14px', fontWeight:700, cursor:'pointer' }}>
                     Guardar alterações
