@@ -952,11 +952,11 @@ export default function App() {
         )}
 
         {/* ══ MAIN CONTENT ══ */}
-        <div style={{ marginLeft: isMobile ? 0 : SIDEBAR_W, flex:1, padding: isMobile ? '1rem' : '1.5rem', paddingTop: isMobile ? TOPBAR_H+16 : '1.5rem', minHeight:'100vh', minWidth:0 }}>
-          <div style={{ maxWidth:'1100px', margin:'0 auto' }}>
+        <div style={{ marginLeft: isMobile ? 0 : SIDEBAR_W, flex:1, padding: isMobile ? '1rem' : '1.5rem', paddingTop: isMobile ? TOPBAR_H+16 : '1.5rem', minHeight:'100vh', minWidth:0, display:'flex', flexDirection:'column' }}>
+          <div style={{ maxWidth:'1100px', margin:'0 auto', width:'100%', flex:1, display:'flex', flexDirection:'column' }}>
 
             {/* ═══ COLABORADORES TAB ═══ */}
-            {dashTab==='colaboradores'&&(<>
+            {dashTab==='colaboradores'&&(<div style={{ flex:1, display:'flex', flexDirection:'column' }}>
 
               {/* Deactivate modal */}
               {deactivateTarget&&(
@@ -1033,7 +1033,7 @@ export default function App() {
                       <p style={{ fontSize:'14px', color:theme.textMuted, margin:0 }}>Nenhum colaborador encontrado para "{colabSearch}"</p>
                     </div>
                   ):(
-                    <div style={{ ...T.card2, overflow:'auto', maxHeight:'600px' }}>
+                    <div style={{ ...T.card2, overflow:'hidden' }}>
                       {paginatedAtivos.map((c,i)=>(
                         <div key={c.id} style={{ borderBottom:i<paginatedAtivos.length-1?'1px solid '+theme.border:'none' }}>
                           {/* Accordion header */}
@@ -1112,7 +1112,7 @@ export default function App() {
 
               {/* ── FORM VIEW ── */}
               {colabView==='form'&&(
-                <div>
+                <div style={{ flex:1 }}>
                   <div style={{ display:'flex', alignItems:'center', gap:'12px', marginBottom:'1.5rem' }}>
                     <button onClick={()=>{if(editingColab){setEditingColab(null);setColabView('detail')}else{resetFormColab();setColabView('list')}}} style={T.backBtn}><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M9 11L5 7l4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>{editingColab?'Voltar ao detalhe':'Voltar à lista'}</button>
                     <span style={{ color:theme.border }}>|</span>
@@ -1167,7 +1167,7 @@ export default function App() {
 
               {/* ── DETAIL VIEW ── */}
               {colabView==='detail'&&selectedColab&&(
-                <div>
+                <div style={{ flex:1, display:'flex', flexDirection:'column' }}>
                   <button onClick={()=>{setColabView('list');setSelectedColab(null)}} style={T.backBtn}><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M9 11L5 7l4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>Voltar à lista</button>
                   {/* Header card */}
                   <div style={{ ...T.card2, padding:'1rem 1.25rem', marginBottom:'1rem' }}>
@@ -1187,8 +1187,8 @@ export default function App() {
                     </div>
                   </div>
                   {/* Detail tabs */}
-                  <div style={{ ...T.card2, overflow:'hidden' }}>
-                    <div style={{ display:'flex', padding:'0 1.5rem', borderBottom:'1px solid '+theme.border }}>
+                  <div style={{ ...T.card2, overflow:'hidden', flex:1, display:'flex', flexDirection:'column' }}>
+                    <div style={{ display:'flex', padding:'0 1.5rem', borderBottom:'1px solid '+theme.border, flexShrink:0 }}>
                       {(['dados','documentos'] as const).map(tab=>(
                         <button key={tab} onClick={()=>setColabDetailTab(tab)} style={{ height:'44px', padding:'0 16px', background:'none', border:'none', borderBottom:colabDetailTab===tab?'2px solid '+theme.btn:'2px solid transparent', color:colabDetailTab===tab?theme.btn:theme.textMuted, fontSize:'13px', fontWeight:colabDetailTab===tab?700:400, cursor:'pointer' }}>
                           {tab==='dados'?'📋 Dados':`📁 Documentos (${selectedColab.documentos.length})`}
@@ -1196,7 +1196,7 @@ export default function App() {
                       ))}
                     </div>
                     {colabDetailTab==='dados'&&(
-                      <div style={{ padding:'1.5rem' }}>
+                      <div style={{ padding:'1.5rem', flex:1, overflowY:'auto' }}>
                         <p style={T.sectionLbl}>Dados profissionais</p>
                         <div style={{ display:'grid', gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : 'repeat(3,1fr)', gap:'16px 20px', marginBottom:'1.5rem' }}>
                           <InfoField label="Nome" value={selectedColab.nome} color={theme.text}/>
@@ -1223,7 +1223,7 @@ export default function App() {
                       </div>
                     )}
                     {colabDetailTab==='documentos'&&(
-                      <div style={{ padding:'1.5rem' }}>
+                      <div style={{ padding:'1.5rem', flex:1, overflowY:'auto' }}>
                         <p style={T.sectionLbl}>Adicionar documento</p>
                         <div style={{ background:theme.bg, borderRadius:'10px', border:'1px dashed '+theme.border, padding:'1.25rem', marginBottom:'1.5rem' }}>
                           {uploadErr&&<div style={{ ...s.alertErr, marginBottom:'10px' }}>{uploadErr}</div>}
@@ -1270,11 +1270,11 @@ export default function App() {
                   </div>
                 </div>
               )}
-            </>)}
+            </div>)}
 
             {/* ═══ DADOS DA EMPRESA ═══ */}
             {dashTab==='empresa'&&(
-              <div>
+              <div style={{ flex:1 }}>
                 <h2 style={{ ...T.title, marginBottom:'1.5rem' }}>Dados da Empresa</h2>
                 {empresaMsg&&(
                   <div style={{ ...(empresaMsg.startsWith('ok:') ? s.alertOk : s.alertErr), marginBottom:'1rem' }}>
