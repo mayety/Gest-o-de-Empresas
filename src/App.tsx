@@ -30,6 +30,21 @@ interface Theme {
   nav: string; navText: string; btn: string; btnText: string; input: string
 }
 
+// ── HORÁRIOS TYPES ─────────────────────────────────────────────────────────
+type TipoDia = 'trabalho' | 'folga' | 'ferias' | 'baixa' | 'gozar-horas' | 'outro-local'
+interface CelulaDia {
+  tipo: TipoDia
+  entrada?: string
+  saida?: string
+  semAlmoco?: boolean
+  local?: string
+}
+type HorarioData = Record<string, Record<string, Record<string, Record<string, CelulaDia>>>>
+type MovimentoTipo = 'auto' | 'manual'
+interface MovimentoBH { id: string; data: string; tipo: MovimentoTipo; horas: number; motivo: string }
+type BancoHorasMovimentos = Record<string, Record<string, MovimentoBH[]>>
+interface EditCelulaState { colabId: string; day: number; yearMonth: string }
+
 // ── CULTURAL CONFIG ────────────────────────────────────────────────────────
 const EU_COUNTRIES = new Set(['AT','BE','BG','HR','CY','CZ','DK','EE','FI','FR','DE','GR','HU','IE','IT','LV','LT','LU','MT','NL','PL','PT','RO','SK','SI','ES','SE'])
 const DEFAULT_CULTURAL: CulturalConfig = {
@@ -78,6 +93,138 @@ function iconeDoc(fileName: string): string {
   if (ext === 'pdf') return '📄'
   if (['jpg','jpeg','png'].includes(ext)) return '🖼️'
   return '📎'
+}
+
+// ── HORÁRIOS HELPERS (pure) ────────────────────────────────────────────────
+const MONTH_NAMES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
+  'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
+
+const TIPO_DIA_LABELS: Record<TipoDia, string> = {
+  'trabalho':'Trabalho', 'folga':'Folga', 'ferias':'Férias',
+  'baixa':'Baixa Médica', 'gozar-horas':'Gozar Horas', 'outro-local':'Outro Estabelecimento',
+}
+
+function parseMinutes(hhmm: string): number {
+  const parts = hhmm.split(':')
+  const h = parseInt(parts[0] ?? '', 10)
+  const m = parseInt(parts[1] ?? '', 10)
+  if (isNaN(h) || isNaN(m)) return NaN
+  return h * 60 + m
+}
+function formatHoras(mins: number): string {
+  if (mins <= 0) return '0:00'
+  const h = Math.floor(mins / 60)
+  const m = mins % 60
+  return `${h}:${String(m).padStart(2,'0')}`
+}
+function daysInMonth(year: number, month: number): number { return new Date(year, month, 0).getDate() }
+function dayOfWeek(year: number, month: number, day: number): number {
+  const d = new Date(year, month - 1, day).getDay()
+  return d === 0 ? 7 : d
+}
+function parseYearMonth(ym: string): { year: number; month: number } {
+  const parts = ym.split('-')
+  return { year: parseInt(parts[0] ?? '2025', 10), month: parseInt(parts[1] ?? '1', 10) }
+}
+function currentYearMonthStr(): string {
+  const n = new Date()
+  return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}`
+}
+
+function calcMinutosTrabalhados(c: CelulaDia): number {
+  if (c.tipo === 'folga' || c.tipo === 'ferias' || c.tipo === 'baixa') return 0
+  if (!c.entrada || !c.saida) return 0
+  const dur = parseMinutes(c.saida) - parseMinutes(c.entrada)
+  if (isNaN(dur) || dur <= 0) return 0
+  return Math.max(0, dur - (c.semAlmoco ? 0 : 60))
+}
+function calcDeltaBH(c: CelulaDia): number {
+  if (c.tipo === 'folga' || c.tipo === 'ferias' || c.tipo === 'baixa') return 0
+  return calcMinutosTrabalhados(c) - 480
+}
+
+type CalendarCol =
+  | { type: 'day'; day: number; isWeekend: boolean; dow: number }
+  | { type: 'weekly'; weekNum: number; dayStart: number; dayEnd: number }
+
+function buildColumns(year: number, month: number): CalendarCol[] {
+  const total = daysInMonth(year, month)
+  const cols: CalendarCol[] = []
+  let weekNum = 1; let weekStart = 1
+  for (let d = 1; d <= total; d++) {
+    const dow = dayOfWeek(year, month, d)
+    cols.push({ type:'day', day:d, isWeekend: dow >= 6, dow })
+    if (dow === 7 || d === total) {
+      cols.push({ type:'weekly', weekNum, dayStart:weekStart, dayEnd:d })
+      weekNum++; weekStart = d + 1
+    }
+  }
+  return cols
+}
+
+function calcWeeklyTotal(colabDays: Record<string, CelulaDia>, start: number, end: number): number {
+  let total = 0
+  for (let d = start; d <= end; d++) {
+    const c = colabDays[String(d)]
+    if (c) total += calcMinutosTrabalhados(c)
+  }
+  return total
+}
+
+function cellBgColor(cell: CelulaDia | undefined, isWeekend: boolean, cardColor: string, bgColor: string): string {
+  if (!cell) return isWeekend ? bgColor : cardColor
+  switch (cell.tipo) {
+    case 'folga':       return '#fef9c3'
+    case 'ferias':      return '#dcfce7'
+    case 'baixa':       return '#fed7aa'
+    case 'gozar-horas': return '#e0f2fe'
+    case 'outro-local': return '#ede9fe'
+    default:            return isWeekend ? bgColor : cardColor
+  }
+}
+
+function cellLabel(cell: CelulaDia | undefined): string {
+  if (!cell) return ''
+  switch (cell.tipo) {
+    case 'folga':       return 'F'
+    case 'ferias':      return 'Férias'
+    case 'baixa':       return 'B'
+    case 'gozar-horas': return cell.entrada && cell.saida ? `G ${cell.entrada}` : 'G'
+    case 'outro-local': return cell.local ? cell.local.substring(0,4) : 'OL'
+    case 'trabalho':    return cell.entrada && cell.saida ? `${cell.entrada}` : ''
+    default:            return ''
+  }
+}
+function cellLabel2(cell: CelulaDia | undefined): string {
+  if (!cell) return ''
+  if (cell.tipo === 'trabalho' || cell.tipo === 'gozar-horas' || cell.tipo === 'outro-local') {
+    return cell.saida ?? ''
+  }
+  return ''
+}
+
+function computeBHTotals(
+  colabId: string, email: string, currentYM: string,
+  horarioData: HorarioData, manualMovimentos: MovimentoBH[]
+): { extraMesAtual: number; horasGozadasMes: number; acumuladasTotal: number; saldo: number } {
+  const companyData = horarioData[email] ?? {}
+  let extraMesAtual = 0; let horasGozadasMes = 0
+  let acumuladasTotal = 0; let totalGozadasAllTime = 0
+
+  for (const [ym, colabMap] of Object.entries(companyData)) {
+    const colabDays = (colabMap as Record<string, Record<string, CelulaDia>>)[colabId] ?? {}
+    for (const cell of Object.values(colabDays)) {
+      const delta = calcDeltaBH(cell)
+      acumuladasTotal += delta
+      if (ym === currentYM) {
+        if (delta > 0) extraMesAtual += delta
+        if (cell.tipo === 'gozar-horas') horasGozadasMes += calcMinutosTrabalhados(cell)
+      }
+      if (cell.tipo === 'gozar-horas') totalGozadasAllTime += calcMinutosTrabalhados(cell)
+    }
+  }
+  for (const mov of manualMovimentos) acumuladasTotal += mov.horas * 60
+  return { extraMesAtual, horasGozadasMes, acumuladasTotal, saldo: acumuladasTotal }
 }
 
 // ── THEMES ────────────────────────────────────────────────────────────────
@@ -293,8 +440,26 @@ export default function App() {
   const [countryList, setCountryList] = useState<CountryItem[]>(FALLBACK_COUNTRIES)
 
   // ── Dashboard tabs
-  const [dashTab, setDashTab] = useState<'colaboradores'|'empresa'>('colaboradores')
+  const [dashTab, setDashTab] = useState<'colaboradores'|'empresa'|'horarios'|'banco-horas'>('colaboradores')
   const [showAppearancePanel, setShowAppearancePanel] = useState(false)
+
+  // ── Horários
+  const [horarioData, setHorarioData] = useState<HorarioData>({})
+  const [horarioYearMonth, setHorarioYearMonth] = useState<string>(currentYearMonthStr)
+  const [editCelula, setEditCelula] = useState<EditCelulaState|null>(null)
+  const [editTipo, setEditTipo] = useState<TipoDia>('trabalho')
+  const [editEntrada, setEditEntrada] = useState('')
+  const [editSaida, setEditSaida] = useState('')
+  const [editSemAlmoco, setEditSemAlmoco] = useState(false)
+  const [editLocal, setEditLocal] = useState('')
+
+  // ── Banco de Horas
+  const [bancoHorasMovimentos, setBancoHorasMovimentos] = useState<BancoHorasMovimentos>({})
+  const [expandedBHColabId, setExpandedBHColabId] = useState<string|null>(null)
+  const [bhAjusteTarget, setBhAjusteTarget] = useState<string|null>(null)
+  const [bhAjusteHoras, setBhAjusteHoras] = useState('')
+  const [bhAjusteMotivo, setBhAjusteMotivo] = useState('')
+  const [bhAjusteErr, setBhAjusteErr] = useState('')
 
   // ── Empresa editing
   const [eNome, setENome] = useState('')
@@ -515,6 +680,166 @@ export default function App() {
   function abrirDocumento(doc: Documento) {
     if (!doc.fileObj) return
     const url = URL.createObjectURL(doc.fileObj); window.open(url,'_blank'); setTimeout(()=>URL.revokeObjectURL(url),10000)
+  }
+
+  // ── Horários helpers
+  function prevMonth() {
+    setHorarioYearMonth(ym => {
+      const { year, month } = parseYearMonth(ym)
+      const d = new Date(year, month - 2, 1)
+      return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`
+    })
+  }
+  function nextMonth() {
+    setHorarioYearMonth(ym => {
+      const { year, month } = parseYearMonth(ym)
+      const d = new Date(year, month, 1)
+      return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`
+    })
+  }
+
+  function openCellEdit(colabId: string, day: number) {
+    const { year, month } = parseYearMonth(horarioYearMonth)
+    if (day > daysInMonth(year, month)) return
+    const existing = horarioData[selectedCompany.email]?.[horarioYearMonth]?.[colabId]?.[String(day)]
+    const cel: CelulaDia = existing ?? { tipo: 'trabalho' }
+    setEditCelula({ colabId, day, yearMonth: horarioYearMonth })
+    setEditTipo(cel.tipo)
+    setEditEntrada(cel.entrada ?? '')
+    setEditSaida(cel.saida ?? '')
+    setEditSemAlmoco(cel.semAlmoco ?? false)
+    setEditLocal(cel.local ?? '')
+  }
+
+  function guardarCelula() {
+    if (!editCelula) return
+    const nova: CelulaDia = { tipo: editTipo }
+    if (['trabalho','gozar-horas','outro-local'].includes(editTipo)) {
+      if (editEntrada) nova.entrada = editEntrada
+      if (editSaida) nova.saida = editSaida
+      if (editSemAlmoco) nova.semAlmoco = true
+    }
+    if (editTipo === 'outro-local' && editLocal) nova.local = editLocal
+    const { colabId, day, yearMonth } = editCelula
+    setHorarioData(prev => ({
+      ...prev,
+      [selectedCompany.email]: {
+        ...(prev[selectedCompany.email] ?? {}),
+        [yearMonth]: {
+          ...(prev[selectedCompany.email]?.[yearMonth] ?? {}),
+          [colabId]: {
+            ...(prev[selectedCompany.email]?.[yearMonth]?.[colabId] ?? {}),
+            [String(day)]: nova,
+          },
+        },
+      },
+    }))
+    setEditCelula(null)
+  }
+
+  function limparCelula() {
+    if (!editCelula) return
+    const { colabId, day, yearMonth } = editCelula
+    setHorarioData(prev => {
+      const days = { ...(prev[selectedCompany.email]?.[yearMonth]?.[colabId] ?? {}) }
+      delete days[String(day)]
+      return {
+        ...prev,
+        [selectedCompany.email]: {
+          ...(prev[selectedCompany.email] ?? {}),
+          [yearMonth]: {
+            ...(prev[selectedCompany.email]?.[yearMonth] ?? {}),
+            [colabId]: days,
+          },
+        },
+      }
+    })
+    setEditCelula(null)
+  }
+
+  // ── Banco de Horas helpers
+  function aplicarAjusteBH() {
+    setBhAjusteErr('')
+    const horas = parseFloat(bhAjusteHoras.replace(',','.'))
+    if (isNaN(horas) || horas === 0) { setBhAjusteErr('Introduza um valor válido (positivo ou negativo).'); return }
+    if (!bhAjusteMotivo.trim()) { setBhAjusteErr('O motivo é obrigatório.'); return }
+    if (!bhAjusteTarget) return
+    const mov: MovimentoBH = {
+      id: Date.now().toString(), data: new Date().toISOString().split('T')[0],
+      tipo: 'manual', horas, motivo: bhAjusteMotivo.trim(),
+    }
+    setBancoHorasMovimentos(prev => {
+      const email = selectedCompany.email
+      return { ...prev, [email]: { ...(prev[email]??{}), [bhAjusteTarget]: [...(prev[email]?.[bhAjusteTarget]??[]), mov] } }
+    })
+    setBhAjusteTarget(null); setBhAjusteHoras(''); setBhAjusteMotivo(''); setBhAjusteErr('')
+  }
+
+  async function exportarPDF() {
+    const { default: JsPDF } = await import('jspdf')
+    const { default: autoTable } = await import('jspdf-autotable')
+    const { year, month } = parseYearMonth(horarioYearMonth)
+    const cols = buildColumns(year, month)
+    const doc = new JsPDF({ orientation:'landscape', unit:'mm', format:'a3' })
+    const monthLabel = `${MONTH_NAMES[month-1]} ${year}`
+    doc.setFontSize(13); doc.setFont('helvetica','bold')
+    doc.text(selectedCompany.name, 14, 14)
+    doc.setFontSize(10); doc.setFont('helvetica','normal')
+    doc.text(`Horário — ${monthLabel}`, 14, 21)
+
+    const headers = ['Colaborador', ...cols.map(col => col.type==='day' ? String(col.day) : 'H/S')]
+    const body = ativos.map(colab => {
+      const colabDays = horarioData[selectedCompany.email]?.[horarioYearMonth]?.[colab.id] ?? {}
+      return [
+        colab.nome,
+        ...cols.map(col => {
+          if (col.type === 'weekly') return formatHoras(calcWeeklyTotal(colabDays, col.dayStart, col.dayEnd))
+          const cell = colabDays[String(col.day)]
+          if (!cell) return ''
+          switch (cell.tipo) {
+            case 'folga':       return 'F'
+            case 'ferias':      return 'Fér'
+            case 'baixa':       return 'B'
+            case 'gozar-horas': return 'G'
+            case 'outro-local': return cell.local?.substring(0,4) ?? 'OL'
+            case 'trabalho':    return cell.entrada && cell.saida ? `${cell.entrada}\n${cell.saida}` : ''
+            default:            return ''
+          }
+        })
+      ]
+    })
+
+    autoTable(doc, {
+      head: [headers], body, startY: 26,
+      styles: { fontSize:6.5, cellPadding:1.5, halign:'center', valign:'middle' },
+      headStyles: { fillColor:[15,23,42], textColor:255, fontStyle:'bold', fontSize:7 },
+      columnStyles: { 0: { halign:'left', cellWidth:38 } },
+      didParseCell(data) {
+        if (data.section==='body' && data.column.index > 0) {
+          const col = cols[data.column.index - 1]
+          if (!col) return
+          if (col.type === 'weekly') { data.cell.styles.fillColor=[219,234,254]; data.cell.styles.fontStyle='bold'; return }
+          if (col.type === 'day' && col.isWeekend && !data.cell.raw) {
+            data.cell.styles.fillColor=[241,245,249]; return
+          }
+          if (col.type === 'day') {
+            const colab = ativos[data.row.index]
+            if (!colab) return
+            const cell = horarioData[selectedCompany.email]?.[horarioYearMonth]?.[colab.id]?.[String(col.day)]
+            const colorMap: Record<string, [number,number,number]> = {
+              'folga':[254,249,195], 'ferias':[220,252,231], 'baixa':[254,215,170],
+              'gozar-horas':[224,242,254], 'outro-local':[237,233,254],
+            }
+            if (cell && colorMap[cell.tipo]) data.cell.styles.fillColor = colorMap[cell.tipo]
+            else if (col.isWeekend) data.cell.styles.fillColor=[241,245,249]
+          }
+        }
+      }
+    })
+    const finalY = (doc as any).lastAutoTable?.finalY ?? 260
+    doc.setFontSize(7.5)
+    doc.text('Legenda: F=Folga  Fér=Férias  B=Baixa Médica  G=Gozar Horas  OL=Outro Estabelecimento', 14, finalY + 7)
+    doc.save(`horario_${selectedCompany.name.replace(/[^a-zA-Z0-9]/g,'_')}_${monthLabel.replace(' ','_')}.pdf`)
   }
 
   // ── Themed style helpers (computed from theme)
@@ -831,7 +1156,7 @@ export default function App() {
     const SIDEBAR_W = isTablet ? 64 : 220
     const TOPBAR_H  = 56
 
-    const navItem = (icon: string, label: string, tab: 'colaboradores'|'empresa', disabled = false) => {
+    const navItem = (icon: string, label: string, tab: 'colaboradores'|'empresa'|'horarios'|'banco-horas', disabled = false) => {
       const active    = dashTab === tab && !disabled
       const collapsed = isTablet
       return (
@@ -891,9 +1216,9 @@ export default function App() {
           {/* Nav */}
           <nav style={{ flex:1, display:'flex', flexDirection:'column', gap:'2px', padding:'0 0 8px' }}>
             {navItem('👥', 'Colaboradores', 'colaboradores')}
-            {navItem('🕐', 'Horários', 'colaboradores', true)}
+            {navItem('🕐', 'Horários', 'horarios')}
             {navItem('🌴', 'Férias', 'colaboradores', true)}
-            {navItem('⏱️', 'Banco de Horas', 'colaboradores', true)}
+            {navItem('⏱️', 'Banco de Horas', 'banco-horas')}
             <div style={{ height:'1px', background:'rgba(255,255,255,.1)', margin:'8px 14px' }}/>
             {navItem('🏢', 'Dados da Empresa', 'empresa')}
             <button title={isTablet ? 'Aparência' : undefined} onClick={()=>{setShowAppearancePanel(p=>!p); if(isMobile) setSidebarOpen(false)}}
@@ -1314,6 +1639,241 @@ export default function App() {
                 </div>
               </div>
             )}
+
+            {/* ═══ HORÁRIOS ═══ */}
+            {dashTab==='horarios'&&(()=>{
+              const { year, month } = parseYearMonth(horarioYearMonth)
+              const nowYM = currentYearMonthStr()
+              const isPastMonth = horarioYearMonth < nowYM
+              const cols = buildColumns(year, month)
+              const thCell: React.CSSProperties = { padding:'4px 2px', textAlign:'center', fontSize:'11px', fontWeight:700, color:theme.textMuted, borderBottom:'2px solid '+theme.border, whiteSpace:'nowrap', userSelect:'none' }
+              const tdBase: React.CSSProperties = { padding:'2px', textAlign:'center', fontSize:'10px', borderBottom:'1px solid '+theme.border, cursor:'pointer', minWidth:'42px', height:'34px', verticalAlign:'middle' }
+              const tdWeekly: React.CSSProperties = { ...tdBase, background:'#dbeafe', fontWeight:700, fontSize:'11px', cursor:'default', minWidth:'46px' }
+              const tdName: React.CSSProperties = { padding:'6px 10px', fontSize:'12px', fontWeight:600, color:theme.text, borderBottom:'1px solid '+theme.border, whiteSpace:'nowrap', position:'sticky' as const, left:0, zIndex:1, background:theme.card, minWidth:'130px', maxWidth:'150px', overflow:'hidden', textOverflow:'ellipsis' }
+              return (
+                <div style={{ flex:1, display:'flex', flexDirection:'column' }}>
+                  {/* Barra de navegação */}
+                  <div style={{ display:'flex', alignItems:'center', gap:'10px', marginBottom:'1rem', flexWrap:'wrap' }}>
+                    <button onClick={prevMonth} style={{ width:'32px', height:'32px', background:theme.card, border:'1px solid '+theme.border, borderRadius:'8px', color:theme.text, fontSize:'16px', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>‹</button>
+                    <span style={{ fontWeight:700, fontSize:'16px', color:theme.text, minWidth:'160px', textAlign:'center' }}>{MONTH_NAMES[month-1]} {year}</span>
+                    <button onClick={nextMonth} style={{ width:'32px', height:'32px', background:theme.card, border:'1px solid '+theme.border, borderRadius:'8px', color:theme.text, fontSize:'16px', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>›</button>
+                    <div style={{ flex:1 }}/>
+                    <button onClick={exportarPDF} style={{ ...btnMd(theme.btn, theme.btnText) }}>📄 Exportar PDF</button>
+                  </div>
+                  {isPastMonth&&<div style={{ ...s.alertInfo, marginBottom:'1rem' }}>A visualizar mês passado. Os dados podem ser editados mas foram já processados.</div>}
+                  {ativos.length===0
+                    ? <div style={{ ...T.card2, padding:'3rem', textAlign:'center' }}><p style={{ fontSize:'40px' }}>📅</p><p style={{ color:theme.textMuted }}>Sem colaboradores ativos.</p></div>
+                    : (
+                      <div style={{ overflowX:'auto', WebkitOverflowScrolling:'touch' as any, flex:1 }}>
+                        <table style={{ borderCollapse:'collapse', minWidth: isMobile ? '900px' : '100%', background:theme.card, borderRadius:'12px', overflow:'hidden' }}>
+                          <thead>
+                            <tr style={{ background:theme.bg }}>
+                              <th style={{ ...thCell, textAlign:'left', paddingLeft:'10px', position:'sticky' as const, left:0, zIndex:2, background:theme.bg, minWidth:'130px' }}>Colaborador</th>
+                              {cols.map((col,i) => col.type==='day'
+                                ? <th key={i} style={{ ...thCell, color: col.isWeekend ? theme.btn : theme.textMuted, background: col.isWeekend ? theme.bg : theme.bg }}>
+                                    <div>{col.day}</div>
+                                    <div style={{ fontSize:'9px', fontWeight:400 }}>{'SMTQSSD'[col.dow-1]}</div>
+                                  </th>
+                                : <th key={i} style={{ ...thCell, color:'#1d4ed8', background:'#dbeafe', minWidth:'46px' }}>H/S</th>
+                              )}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {ativos.map(colab => {
+                              const colabDays = horarioData[selectedCompany.email]?.[horarioYearMonth]?.[colab.id] ?? {}
+                              return (
+                                <tr key={colab.id}>
+                                  <td style={tdName} title={colab.nome}>{colab.nome}</td>
+                                  {cols.map((col,i) => {
+                                    if (col.type === 'weekly') {
+                                      const total = calcWeeklyTotal(colabDays, col.dayStart, col.dayEnd)
+                                      return <td key={i} style={tdWeekly}>{total > 0 ? formatHoras(total) : '—'}</td>
+                                    }
+                                    const cell = colabDays[String(col.day)]
+                                    const bg = cellBgColor(cell, col.isWeekend, theme.card, theme.bg)
+                                    const l1 = cellLabel(cell)
+                                    const l2 = cellLabel2(cell)
+                                    return (
+                                      <td key={i} onClick={()=>openCellEdit(colab.id, col.day)}
+                                        style={{ ...tdBase, background:bg, border:'1px solid '+theme.border }}>
+                                        {l1&&<div style={{ fontSize:'10px', fontWeight:600, color: cell?.tipo==='folga'?'#92400e':cell?.tipo==='ferias'?'#166534':cell?.tipo==='baixa'?'#9a3412':cell?.tipo==='gozar-horas'?'#075985':cell?.tipo==='outro-local'?'#5b21b6':theme.text, lineHeight:1.2 }}>{l1}</div>}
+                                        {l2&&<div style={{ fontSize:'9px', color:theme.textMuted, lineHeight:1.2 }}>{l2}</div>}
+                                      </td>
+                                    )
+                                  })}
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )
+                  }
+                  {/* Legenda */}
+                  <div style={{ display:'flex', gap:'12px', flexWrap:'wrap', marginTop:'12px', fontSize:'11px', color:theme.textMuted }}>
+                    {([['#fef9c3','Folga (F)'],['#dcfce7','Férias'],['#fed7aa','Baixa (B)'],['#e0f2fe','Gozar Horas (G)'],['#ede9fe','Outro Local (OL)']] as [string,string][]).map(([bg,lbl])=>(
+                      <div key={lbl} style={{ display:'flex', alignItems:'center', gap:'5px' }}>
+                        <div style={{ width:'14px', height:'14px', borderRadius:'3px', background:bg, border:'1px solid #e2e8f0', flexShrink:0 }}/>
+                        <span>{lbl}</span>
+                      </div>
+                    ))}
+                  </div>
+                  {/* Modal edição de célula */}
+                  {editCelula&&(
+                    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.5)', zIndex:300, display:'flex', alignItems:'center', justifyContent:'center', padding:'1rem' }}>
+                      <div style={{ background:theme.card, borderRadius:'16px', padding:'1.5rem', width:'100%', maxWidth:'380px', border:'1px solid '+theme.border }}>
+                        <p style={{ fontWeight:700, fontSize:'15px', color:theme.text, marginTop:0, marginBottom:'4px' }}>
+                          {ativos.find(c=>c.id===editCelula.colabId)?.nome}
+                        </p>
+                        <p style={{ fontSize:'12px', color:theme.textMuted, marginBottom:'1rem' }}>
+                          Dia {editCelula.day} de {MONTH_NAMES[parseYearMonth(editCelula.yearMonth).month-1]} {parseYearMonth(editCelula.yearMonth).year}
+                        </p>
+                        <div style={{ marginBottom:'12px' }}>
+                          <label style={T.label}>Tipo de dia</label>
+                          <select style={T.select} value={editTipo} onChange={e=>{
+                            const t = e.target.value as TipoDia
+                            setEditTipo(t)
+                            if (['folga','ferias','baixa'].includes(t)) { setEditEntrada(''); setEditSaida(''); setEditSemAlmoco(false); setEditLocal('') }
+                          }}>
+                            {(Object.entries(TIPO_DIA_LABELS) as [TipoDia,string][]).map(([k,v])=><option key={k} value={k}>{v}</option>)}
+                          </select>
+                        </div>
+                        {['trabalho','gozar-horas','outro-local'].includes(editTipo)&&(<>
+                          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px', marginBottom:'10px' }}>
+                            <div><label style={T.label}>Entrada</label><input style={T.input} type="time" value={editEntrada} onChange={e=>setEditEntrada(e.target.value)}/></div>
+                            <div><label style={T.label}>Saída</label><input style={T.input} type="time" value={editSaida} onChange={e=>setEditSaida(e.target.value)}/></div>
+                          </div>
+                          <div style={{ display:'flex', alignItems:'center', gap:'8px', marginBottom:'10px' }}>
+                            <input type="checkbox" id="semAlmoco" checked={editSemAlmoco} onChange={e=>setEditSemAlmoco(e.target.checked)} style={{ width:'15px', height:'15px', flexShrink:0 }}/>
+                            <label htmlFor="semAlmoco" style={{ fontSize:'13px', color:theme.text, cursor:'pointer' }}>Sem pausa de almoço (1h)</label>
+                          </div>
+                        </>)}
+                        {editTipo==='outro-local'&&(
+                          <div style={{ marginBottom:'10px' }}>
+                            <label style={T.label}>Nome do estabelecimento</label>
+                            <input style={T.input} type="text" placeholder="Ex: Kaju, Clínica Norte..." value={editLocal} onChange={e=>setEditLocal(e.target.value)}/>
+                          </div>
+                        )}
+                        {['trabalho','gozar-horas','outro-local'].includes(editTipo)&&editEntrada&&editSaida&&(()=>{
+                          const mins = calcMinutosTrabalhados({ tipo:editTipo, entrada:editEntrada, saida:editSaida, semAlmoco:editSemAlmoco })
+                          const delta = calcDeltaBH({ tipo:editTipo, entrada:editEntrada, saida:editSaida, semAlmoco:editSemAlmoco })
+                          return (
+                            <div style={{ background:theme.bg, borderRadius:'8px', padding:'8px 12px', marginBottom:'12px', fontSize:'12px', color:theme.textMuted }}>
+                              Horas trabalhadas: <strong>{formatHoras(mins)}</strong>
+                              {'  ·  '}
+                              Banco de horas: <strong style={{ color: delta>=0?'#16a34a':'#dc2626' }}>{delta>=0?'+':''}{formatHoras(Math.abs(delta))}</strong>
+                            </div>
+                          )
+                        })()}
+                        <div style={{ display:'flex', gap:'8px', marginTop:'4px' }}>
+                          <button onClick={guardarCelula} style={{ flex:1, height:'38px', background:theme.btn, border:'none', borderRadius:'8px', color:theme.btnText, fontSize:'13px', fontWeight:600, cursor:'pointer' }}>Guardar</button>
+                          <button onClick={limparCelula} style={{ height:'38px', padding:'0 14px', background:'#fef2f2', border:'none', borderRadius:'8px', color:'#b91c1c', fontSize:'13px', cursor:'pointer' }}>Limpar</button>
+                          <button onClick={()=>setEditCelula(null)} style={{ height:'38px', padding:'0 14px', background:theme.bg, border:'1px solid '+theme.border, borderRadius:'8px', color:theme.text, fontSize:'13px', cursor:'pointer' }}>Cancelar</button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
+
+            {/* ═══ BANCO DE HORAS ═══ */}
+            {dashTab==='banco-horas'&&(()=>{
+              const bhRows = ativos.map(colab => {
+                const movimentos = bancoHorasMovimentos[selectedCompany.email]?.[colab.id] ?? []
+                const totals = computeBHTotals(colab.id, selectedCompany.email, horarioYearMonth, horarioData, movimentos.filter(m=>m.tipo==='manual'))
+                return { colab, totals, movimentos }
+              })
+              return (
+                <div style={{ flex:1, display:'flex', flexDirection:'column' }}>
+                  <div style={{ display:'flex', alignItems:'center', gap:'10px', marginBottom:'1.25rem', flexWrap:'wrap' }}>
+                    <h2 style={{ ...T.title, fontSize:'20px', margin:0 }}>Banco de Horas</h2>
+                    <div style={{ flex:1 }}/>
+                    <button onClick={prevMonth} style={{ width:'30px', height:'30px', background:theme.card, border:'1px solid '+theme.border, borderRadius:'7px', color:theme.text, fontSize:'14px', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>‹</button>
+                    <span style={{ fontWeight:600, fontSize:'14px', color:theme.text }}>{MONTH_NAMES[parseYearMonth(horarioYearMonth).month-1]} {parseYearMonth(horarioYearMonth).year}</span>
+                    <button onClick={nextMonth} style={{ width:'30px', height:'30px', background:theme.card, border:'1px solid '+theme.border, borderRadius:'7px', color:theme.text, fontSize:'14px', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>›</button>
+                  </div>
+                  {/* Ajuste manual modal */}
+                  {bhAjusteTarget&&(
+                    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.5)', zIndex:300, display:'flex', alignItems:'center', justifyContent:'center', padding:'1rem' }}>
+                      <div style={{ background:theme.card, borderRadius:'16px', padding:'1.5rem', width:'100%', maxWidth:'360px', border:'1px solid '+theme.border }}>
+                        <p style={{ fontWeight:700, fontSize:'15px', color:theme.text, marginTop:0, marginBottom:'4px' }}>Ajuste Manual</p>
+                        <p style={{ fontSize:'12px', color:theme.textMuted, marginBottom:'1rem' }}>{ativos.find(c=>c.id===bhAjusteTarget)?.nome}</p>
+                        {bhAjusteErr&&<div style={{ ...s.alertErr, marginBottom:'10px' }}>{bhAjusteErr}</div>}
+                        <div style={{ marginBottom:'12px' }}>
+                          <label style={T.label}>Horas (positivo = crédito, negativo = débito)</label>
+                          <input style={T.input} type="number" step="0.25" placeholder="Ex: 2.5 ou -1.5" value={bhAjusteHoras} onChange={e=>setBhAjusteHoras(e.target.value)}/>
+                        </div>
+                        <div style={{ marginBottom:'1.25rem' }}>
+                          <label style={T.label}>Motivo *</label>
+                          <input style={T.input} type="text" placeholder="Ex: Compensação dia X, Erro registo..." value={bhAjusteMotivo} onChange={e=>setBhAjusteMotivo(e.target.value)}/>
+                        </div>
+                        <div style={{ display:'flex', gap:'8px' }}>
+                          <button onClick={()=>{setBhAjusteTarget(null);setBhAjusteHoras('');setBhAjusteMotivo('');setBhAjusteErr('')}} style={{ flex:1, height:'38px', background:theme.bg, border:'1px solid '+theme.border, borderRadius:'8px', color:theme.text, fontSize:'13px', cursor:'pointer' }}>Cancelar</button>
+                          <button onClick={aplicarAjusteBH} style={{ flex:1, height:'38px', background:theme.btn, border:'none', borderRadius:'8px', color:theme.btnText, fontSize:'13px', fontWeight:600, cursor:'pointer' }}>Aplicar</button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  {ativos.length===0
+                    ? <div style={{ ...T.card2, padding:'3rem', textAlign:'center' }}><p style={{ fontSize:'40px' }}>⏱️</p><p style={{ color:theme.textMuted }}>Sem colaboradores ativos.</p></div>
+                    : (
+                      <div style={{ ...T.card2, overflow:'hidden', flex:1 }}>
+                        {/* Header */}
+                        <div style={{ display:'grid', gridTemplateColumns: isMobile ? '1fr' : '1.8fr 1fr 1fr 1fr 1fr 1.4fr 100px', gap:0, padding:'8px 14px', background:theme.bg, borderBottom:'2px solid '+theme.border }}>
+                          {['Colaborador','H.Extra Mês','H.Extra Acum.','H.Gozadas','Saldo','Observações','Ações'].map((h,i)=>(
+                            <span key={i} style={{ fontSize:'11px', fontWeight:700, color:theme.textMuted, textTransform:'uppercase', letterSpacing:'.04em', display: isMobile&&i>0?'none':'block' }}>{h}</span>
+                          ))}
+                        </div>
+                        {bhRows.map(({ colab, totals, movimentos })=>{
+                          const saldoH = totals.saldo / 60
+                          const extraH = totals.extraMesAtual / 60
+                          const gozH   = totals.horasGozadasMes / 60
+                          const acumH  = totals.acumuladasTotal / 60
+                          const isExpanded = expandedBHColabId === colab.id
+                          return (
+                            <div key={colab.id} style={{ borderBottom:'1px solid '+theme.border }}>
+                              <div style={{ display:'grid', gridTemplateColumns: isMobile ? '1fr' : '1.8fr 1fr 1fr 1fr 1fr 1.4fr 100px', gap:0, padding:'10px 14px', alignItems:'center' }}>
+                                <div style={{ display:'flex', alignItems:'center', gap:'8px' }}>
+                                  <div style={{ width:'28px', height:'28px', borderRadius:'50%', background:theme.bg, display:'flex', alignItems:'center', justifyContent:'center', fontSize:'12px', fontWeight:700, color:theme.btn, flexShrink:0 }}>{colab.nome.charAt(0)}</div>
+                                  <span style={{ fontSize:'13px', fontWeight:600, color:theme.text }}>{colab.nome}</span>
+                                </div>
+                                <span style={{ fontSize:'13px', color: extraH>0?'#16a34a':theme.textMuted, fontWeight:600 }}>{extraH>0?`+${extraH.toFixed(2)}h`:'0h'}</span>
+                                <span style={{ fontSize:'13px', color: acumH>0?'#16a34a':acumH<0?'#dc2626':theme.textMuted, fontWeight:600 }}>{acumH>=0?'+':''}{acumH.toFixed(2)}h</span>
+                                <span style={{ fontSize:'13px', color: gozH>0?'#f97316':theme.textMuted }}>{gozH>0?`-${gozH.toFixed(2)}h`:'0h'}</span>
+                                <span style={{ fontSize:'14px', fontWeight:700, color: saldoH>0?'#16a34a':saldoH<0?'#dc2626':theme.textMuted }}>{saldoH>=0?'+':''}{saldoH.toFixed(2)}h</span>
+                                <span style={{ fontSize:'12px', color:theme.textMuted, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                                  {movimentos.filter(m=>m.tipo==='manual').length>0 ? movimentos.filter(m=>m.tipo==='manual').slice(-1)[0]!.motivo : '—'}
+                                </span>
+                                <div style={{ display:'flex', gap:'6px' }}>
+                                  <button onClick={()=>setBhAjusteTarget(colab.id)} style={btnSm(theme.bg,theme.btn)} title="Ajuste manual">✋</button>
+                                  <button onClick={()=>setExpandedBHColabId(isExpanded?null:colab.id)} style={btnSm(theme.bg,theme.textMuted)} title="Histórico">{isExpanded?'▲':'▼'}</button>
+                                </div>
+                              </div>
+                              {isExpanded&&(
+                                <div style={{ padding:'0 14px 12px 46px', background:theme.bg }}>
+                                  {movimentos.length===0
+                                    ? <p style={{ fontSize:'12px', color:theme.textMuted, margin:'8px 0' }}>Sem movimentos manuais registados.</p>
+                                    : movimentos.map(mov=>(
+                                        <div key={mov.id} style={{ display:'flex', gap:'12px', fontSize:'12px', color:theme.text, padding:'5px 0', borderBottom:'1px solid '+theme.border }}>
+                                          <span style={{ color:theme.textMuted, minWidth:'80px', flexShrink:0 }}>{mov.data}</span>
+                                          <span style={{ minWidth:'56px', flexShrink:0, fontWeight:700, color:mov.horas>=0?'#16a34a':'#dc2626' }}>{mov.horas>=0?'+':''}{mov.horas}h</span>
+                                          <span style={{ flex:1 }}>{mov.motivo}</span>
+                                          <span style={{ color:theme.textMuted, flexShrink:0 }}>{mov.tipo==='manual'?'✋ Manual':'🤖 Auto'}</span>
+                                        </div>
+                                      ))
+                                  }
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )
+                  }
+                </div>
+              )
+            })()}
 
           </div>
         </div>
