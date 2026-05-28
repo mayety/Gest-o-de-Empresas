@@ -24,6 +24,8 @@ interface Colaborador {
   morada: { rua: string; numero: string; andar: string; codigoPostal: string; localidade: string; distrito: string }
   documentos: Documento[]
   ativo: boolean; dataSaida?: string; motivoSaida?: string
+  turnoSemana?: { entrada: string; saida: string }
+  turnoFimSemana?: { entrada: string; saida: string }
 }
 interface Theme {
   bg: string; card: string; border: string; text: string; textMuted: string
@@ -44,6 +46,8 @@ type MovimentoTipo = 'auto' | 'manual'
 interface MovimentoBH { id: string; data: string; tipo: MovimentoTipo; horas: number; motivo: string }
 type BancoHorasMovimentos = Record<string, Record<string, MovimentoBH[]>>
 interface EditCelulaState { colabId: string; day: number; yearMonth: string }
+interface FeriadoMunicipal { id: string; nome: string; data: string }  // data = "MM-DD"
+
 
 // ── CULTURAL CONFIG ────────────────────────────────────────────────────────
 const EU_COUNTRIES = new Set(['AT','BE','BG','HR','CY','CZ','DK','EE','FI','FR','DE','GR','HU','IE','IT','LV','LT','LU','MT','NL','PL','PT','RO','SK','SI','ES','SE'])
@@ -102,6 +106,16 @@ const MONTH_NAMES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
 const TIPO_DIA_LABELS: Record<TipoDia, string> = {
   'trabalho':'Trabalho', 'folga':'Folga', 'ferias':'Férias',
   'baixa':'Baixa Médica', 'gozar-horas':'Gozar Horas', 'outro-local':'Outro Estabelecimento',
+}
+
+const FERIADOS_NACIONAIS_PT = new Set(['01-01','25-04','01-05','10-06','15-08','05-10','01-11','01-12','08-12','25-12'])
+function isFeriadoPT(month: number, day: number, municipais: FeriadoMunicipal[]): boolean {
+  const key = `${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`
+  return FERIADOS_NACIONAIS_PT.has(key) || municipais.some(f => f.data === key)
+}
+function getMonthWeekIdx(year: number, month: number, day: number): number {
+  const firstDow = dayOfWeek(year, month, 1) - 1
+  return Math.floor((day - 1 + firstDow) / 7)
 }
 
 function parseMinutes(hhmm: string): number {
@@ -443,6 +457,18 @@ export default function App() {
   const [bhAjusteMotivo, setBhAjusteMotivo] = useState('')
   const [bhAjusteErr, setBhAjusteErr] = useState('')
 
+  // -- Geracao automatica de horarios
+  const [showGerarModal, setShowGerarModal] = useState(false)
+  // -- Feriados municipais
+  const [feriadosMunicipais, setFeriadosMunicipais] = useState<Record<string, FeriadoMunicipal[]>>({})
+  const [novoFeriadoNome, setNovoFeriadoNome] = useState('')
+  const [novoFeriadoData, setNovoFeriadoData] = useState('')
+  // -- Turno form fields (dias uteis e fim de semana)
+  const [fTurnoEntrada, setFTurnoEntrada] = useState('')
+  const [fTurnoSaida, setFTurnoSaida] = useState('')
+  const [fTurnoFSEntrada, setFTurnoFSEntrada] = useState('')
+  const [fTurnoFSSaida, setFTurnoFSSaida] = useState('')
+
   // ── Empresa editing
   const [eNome, setENome] = useState('')
   const [eNif,  setENif]  = useState('')
@@ -603,6 +629,7 @@ export default function App() {
     setFNome(''); setFNif(''); setFCargo(''); setFDept(''); setFEmail(''); setFTel('')
     setFDataAdm(''); setFContrato('sem-termo'); setFRua(''); setFNumero(''); setFAndar('')
     setFCP(''); setFLocalidade(''); setFDistrito(''); setFormColabErr('')
+    setFTurnoEntrada(''); setFTurnoSaida(''); setFTurnoFSEntrada(''); setFTurnoFSSaida('')
   }
   function iniciarEdicao(c: Colaborador) {
     setEditingColab(c)
@@ -610,13 +637,19 @@ export default function App() {
     setFEmail(c.email); setFTel(c.telefone); setFDataAdm(c.dataAdmissao); setFContrato(c.tipoContrato)
     setFRua(c.morada.rua); setFNumero(c.morada.numero); setFAndar(c.morada.andar)
     setFCP(c.morada.codigoPostal); setFLocalidade(c.morada.localidade); setFDistrito(c.morada.distrito)
+    setFTurnoEntrada(c.turnoSemana?.entrada ?? '')
+    setFTurnoSaida(c.turnoSemana?.saida ?? '')
+    setFTurnoFSEntrada(c.turnoFimSemana?.entrada ?? '')
+    setFTurnoFSSaida(c.turnoFimSemana?.saida ?? '')
     setFormColabErr(''); setColabView('form')
   }
   function adicionarColaborador() {
     setFormColabErr('')
     if (!fNome||!fNif||!fCargo||!fDept||!fEmail||!fTel||!fDataAdm) { setFormColabErr('Preencha todos os campos obrigatórios (*).'); return }
     if (!validarEmail(fEmail)) { setFormColabErr('E-mail inválido.'); return }
-    const novo: Colaborador = { id:Date.now().toString(), nome:fNome, nif:fNif, cargo:fCargo, departamento:fDept, email:fEmail, telefone:fTel, dataAdmissao:fDataAdm, tipoContrato:fContrato, ativo:true, morada:{rua:fRua,numero:fNumero,andar:fAndar,codigoPostal:fCP,localidade:fLocalidade,distrito:fDistrito}, documentos:[] }
+    const turnoSemanaNew = fTurnoEntrada && fTurnoSaida ? {entrada:fTurnoEntrada,saida:fTurnoSaida} : undefined
+    const turnoFimSemanaNew = fTurnoFSEntrada && fTurnoFSSaida ? {entrada:fTurnoFSEntrada,saida:fTurnoFSSaida} : undefined
+    const novo: Colaborador = { id:Date.now().toString(), nome:fNome, nif:fNif, cargo:fCargo, departamento:fDept, email:fEmail, telefone:fTel, dataAdmissao:fDataAdm, tipoContrato:fContrato, ativo:true, morada:{rua:fRua,numero:fNumero,andar:fAndar,codigoPostal:fCP,localidade:fLocalidade,distrito:fDistrito}, documentos:[], turnoSemana:turnoSemanaNew, turnoFimSemana:turnoFimSemanaNew }
     updateColaboradores(prev=>[...prev,novo]); resetFormColab(); setColabView('list')
   }
   function atualizarColaborador() {
@@ -624,7 +657,9 @@ export default function App() {
     setFormColabErr('')
     if (!fNome||!fNif||!fCargo||!fDept||!fEmail||!fTel||!fDataAdm) { setFormColabErr('Preencha todos os campos obrigatórios (*).'); return }
     if (!validarEmail(fEmail)) { setFormColabErr('E-mail inválido.'); return }
-    const updated: Colaborador = { ...editingColab, nome:fNome, nif:fNif, cargo:fCargo, departamento:fDept, email:fEmail, telefone:fTel, dataAdmissao:fDataAdm, tipoContrato:fContrato, morada:{rua:fRua,numero:fNumero,andar:fAndar,codigoPostal:fCP,localidade:fLocalidade,distrito:fDistrito} }
+    const turnoSemanaUpd = fTurnoEntrada && fTurnoSaida ? {entrada:fTurnoEntrada,saida:fTurnoSaida} : undefined
+    const turnoFimSemanaUpd = fTurnoFSEntrada && fTurnoFSSaida ? {entrada:fTurnoFSEntrada,saida:fTurnoFSSaida} : undefined
+    const updated: Colaborador = { ...editingColab, nome:fNome, nif:fNif, cargo:fCargo, departamento:fDept, email:fEmail, telefone:fTel, dataAdmissao:fDataAdm, tipoContrato:fContrato, morada:{rua:fRua,numero:fNumero,andar:fAndar,codigoPostal:fCP,localidade:fLocalidade,distrito:fDistrito}, turnoSemana:turnoSemanaUpd, turnoFimSemana:turnoFimSemanaUpd }
     updateColaboradores(prev=>prev.map(c=>c.id===editingColab.id?updated:c))
     setSelectedColab(updated); setEditingColab(null); resetFormColab(); setColabView('detail')
   }
@@ -755,6 +790,49 @@ export default function App() {
       return { ...prev, [email]: { ...(prev[email]??{}), [bhAjusteTarget]: [...(prev[email]?.[bhAjusteTarget]??[]), mov] } }
     })
     setBhAjusteTarget(null); setBhAjusteHoras(''); setBhAjusteMotivo(''); setBhAjusteErr('')
+  }
+
+  // Geracao automatica de horario mensal com folgas rotativas
+  function gerarHorarioAutomatico() {
+    const { year, month } = parseYearMonth(horarioYearMonth)
+    const total = daysInMonth(year, month)
+    const municipais = feriadosMunicipais[selectedCompany.email] ?? []
+    const newColabData: Record<string, Record<string, CelulaDia>> = {}
+    ativos.forEach((colab, colabIdx) => {
+      const dias: Record<string, CelulaDia> = {}
+      for (let day = 1; day <= total; day++) {
+        const dow = dayOfWeek(year, month, day)  // 1=Seg..7=Dom
+        const weekIdx = getMonthWeekIdx(year, month, day)  // 0-indexed
+        const dowZ = dow - 1  // 0=Seg..6=Dom
+        // Dias de folga rotativos: 2 por semana, baseados no indice do colaborador
+        const restA = (colabIdx + weekIdx * 2) % 7
+        const restB = (colabIdx + weekIdx * 2 + 1) % 7
+        const ehFeriado = isFeriadoPT(month, day, municipais)
+        const ehFimSemanaOuFeriado = dow >= 6 || ehFeriado
+        if (dowZ === restA || dowZ === restB) {
+          dias[String(day)] = { tipo: 'folga' }
+        } else if (ehFimSemanaOuFeriado) {
+          const t = colab.turnoFimSemana
+          if (t?.entrada && t?.saida) {
+            dias[String(day)] = { tipo: 'trabalho', entrada: t.entrada, saida: t.saida }
+          }
+        } else {
+          const t = colab.turnoSemana
+          if (t?.entrada && t?.saida) {
+            dias[String(day)] = { tipo: 'trabalho', entrada: t.entrada, saida: t.saida }
+          }
+        }
+      }
+      newColabData[colab.id] = dias
+    })
+    setHorarioData(prev => ({
+      ...prev,
+      [selectedCompany.email]: {
+        ...(prev[selectedCompany.email] ?? {}),
+        [horarioYearMonth]: newColabData
+      }
+    }))
+    setShowGerarModal(false)
   }
 
   async function exportarPDF() {
@@ -1449,6 +1527,13 @@ export default function App() {
                         </select>
                       </div>
                     </div>
+                    <p style={{ ...T.sectionLbl, marginTop:'12px' }}>Turnos de trabalho</p>
+                    <div style={{ display:'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap:'10px', marginBottom:'0.875rem' }}>
+                      <div><label style={T.label}>Turno dias úteis — Entrada</label><input style={T.input} type="time" value={fTurnoEntrada} onChange={e=>setFTurnoEntrada(e.target.value)}/></div>
+                      <div><label style={T.label}>Turno dias úteis — Saída</label><input style={T.input} type="time" value={fTurnoSaida} onChange={e=>setFTurnoSaida(e.target.value)}/></div>
+                      <div><label style={T.label}>Turno fim de semana/feriado — Entrada</label><input style={T.input} type="time" value={fTurnoFSEntrada} onChange={e=>setFTurnoFSEntrada(e.target.value)}/></div>
+                      <div><label style={T.label}>Turno fim de semana/feriado — Saída</label><input style={T.input} type="time" value={fTurnoFSSaida} onChange={e=>setFTurnoFSSaida(e.target.value)}/></div>
+                    </div>
                     <p style={{ ...T.sectionLbl, marginTop:'12px' }}>Morada</p>
                     <div style={{ display:'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : '2fr 1fr 1fr', gap:'10px', marginBottom:'0.875rem' }}>
                       <div style={{ gridColumn: isMobile ? '1/-1' : 'auto' }}><label style={T.label}>Rua / Avenida</label><input style={T.input} type="text" placeholder="Ex: Rua das Flores" value={fRua} onChange={e=>setFRua(e.target.value)}/></div>
@@ -1619,6 +1704,43 @@ export default function App() {
                     Guardar alterações
                   </button>
                 </div>
+
+                {/* Feriados Municipais */}
+                <div style={{ ...T.card2, padding:'1.5rem', marginTop:'1.5rem' }}>
+                  <h3 style={{ ...T.title, fontSize:'16px', marginBottom:'1rem' }}>Feriados Municipais</h3>
+                  {(feriadosMunicipais[selectedCompany.email] ?? []).length === 0
+                    ? <p style={{ fontSize:'13px', color:theme.textMuted, marginBottom:'1rem' }}>Nenhum feriado municipal configurado.</p>
+                    : (
+                      <div style={{ marginBottom:'1rem' }}>
+                        {(feriadosMunicipais[selectedCompany.email] ?? []).map(f => (
+                          <div key={f.id} style={{ display:'flex', alignItems:'center', gap:'10px', padding:'7px 0', borderBottom:'1px solid '+theme.border }}>
+                            <span style={{ fontSize:'13px', color:theme.text, flex:1 }}>{f.nome}</span>
+                            <span style={{ fontSize:'12px', color:theme.textMuted, fontVariantNumeric:'tabular-nums' }}>{f.data}</span>
+                            <button onClick={()=>setFeriadosMunicipais(prev => {
+                              const cur = prev[selectedCompany.email] ?? []
+                              return { ...prev, [selectedCompany.email]: cur.filter(x => x.id !== f.id) }
+                            })} style={{ height:'26px', padding:'0 10px', background:'#fef2f2', color:'#b91c1c', border:'1px solid #fecaca', borderRadius:'6px', fontSize:'12px', cursor:'pointer' }}>Remover</button>
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  }
+                  <p style={{ ...T.sectionLbl, marginBottom:'8px' }}>Adicionar feriado</p>
+                  <div style={{ display:'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr auto auto', gap:'8px', alignItems:'flex-end' }}>
+                    <div><label style={T.label}>Nome do feriado</label><input style={T.input} type="text" placeholder="Ex: Dia da Cidade" value={novoFeriadoNome} onChange={e=>setNovoFeriadoNome(e.target.value)}/></div>
+                    <div><label style={T.label}>Data (MM-DD)</label><input style={T.input} type="text" placeholder="06-13" maxLength={5} value={novoFeriadoData} onChange={e=>setNovoFeriadoData(e.target.value)}/></div>
+                    <button onClick={()=>{
+                      const nome = novoFeriadoNome.trim()
+                      const data = novoFeriadoData.trim()
+                      if (!nome || !/^\d{2}-\d{2}$/.test(data)) return
+                      const novo: FeriadoMunicipal = { id: Date.now().toString(), nome, data }
+                      setFeriadosMunicipais(prev => ({ ...prev, [selectedCompany.email]: [...(prev[selectedCompany.email] ?? []), novo] }))
+                      setNovoFeriadoNome(''); setNovoFeriadoData('')
+                    }} style={{ height:'36px', padding:'0 16px', background:theme.btn, color:theme.btnText, border:'none', borderRadius:'8px', fontSize:'13px', fontWeight:700, cursor:'pointer', whiteSpace:'nowrap' as const }}>
+                      + Adicionar
+                    </button>
+                  </div>
+                </div>
               </div>
             )}
 
@@ -1629,11 +1751,13 @@ export default function App() {
               const isPastMonth = horarioYearMonth < nowYM
               const totalDias = daysInMonth(year, month)
 
+              const municipais = feriadosMunicipais[selectedCompany.email] ?? []
+
               // Um array por dia do mês com metadados
               const days = Array.from({ length: totalDias }, (_, i) => {
                 const day = i + 1
                 const dow = dayOfWeek(year, month, day)
-                return { day, dow, isWeekend: dow >= 6, isLastOfWeek: dow === 7 || day === totalDias }
+                return { day, dow, isWeekend: dow >= 6, isLastOfWeek: dow === 7 || day === totalDias, isFeriado: isFeriadoPT(month, day, municipais) }
               })
 
               // Conteudo da celula: l1 = tipo/entrada, l2 = saida
@@ -1667,9 +1791,35 @@ export default function App() {
                     <span style={{ fontWeight:700, fontSize:'16px', color:theme.text, minWidth:'160px', textAlign:'center' }}>{MONTH_NAMES[month-1]} {year}</span>
                     <button onClick={nextMonth} style={navBtn}>›</button>
                     <div style={{ flex:1 }}/>
+                    <button onClick={()=>setShowGerarModal(true)} style={{ ...btnMd('#d1fae5','#065f46') }}>⚡ Gerar Horário</button>
                     <button onClick={exportarPDF} style={{ ...btnMd(theme.btn, theme.btnText) }}>📄 Exportar PDF</button>
                   </div>
                   {isPastMonth&&<div style={{ ...s.alertInfo, marginBottom:'1rem' }}>A visualizar mês passado. Os dados podem ser editados mas foram já processados.</div>}
+
+                  {/* Modal confirmação gerar horário */}
+                  {showGerarModal&&(
+                    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.45)', zIndex:200, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                      <div style={{ background:theme.card, border:'1px solid '+theme.border, borderRadius:'16px', padding:'1.5rem', maxWidth:'420px', width:'90%', boxShadow:'0 8px 32px rgba(0,0,0,0.18)' }}>
+                        <h3 style={{ ...T.title, fontSize:'17px', marginBottom:'8px' }}>⚡ Gerar horário automático</h3>
+                        <p style={{ fontSize:'14px', color:theme.text, marginBottom:'4px' }}><strong>{MONTH_NAMES[month-1]} {year}</strong> — {ativos.length} colaboradores ativos</p>
+                        <div style={{ ...s.alertInfo, marginBottom:'1rem', fontSize:'13px' }}>
+                          <strong>Atenção:</strong> Esta ação irá substituir todos os registos do mês selecionado.<br/>
+                          As folgas são distribuídas rotativamente (2 por semana por colaborador).
+                        </div>
+                        <p style={{ fontSize:'13px', color:theme.textMuted, marginBottom:'12px' }}>Regras aplicadas:</p>
+                        <ul style={{ fontSize:'13px', color:theme.text, margin:'0 0 1.25rem 0', paddingLeft:'1.2rem', lineHeight:'1.7' }}>
+                          <li>Dias úteis: horário de turno configurado no perfil</li>
+                          <li>Fins de semana e feriados: turno de fim de semana</li>
+                          <li>2 folgas por semana por colaborador (rotativas)</li>
+                          <li>Feriados nacionais e municipais assinalados</li>
+                        </ul>
+                        <div style={{ display:'flex', gap:'8px' }}>
+                          <button onClick={gerarHorarioAutomatico} style={{ flex:1, height:'40px', background:'#065f46', border:'none', borderRadius:'8px', color:'#fff', fontSize:'14px', fontWeight:700, cursor:'pointer' }}>Confirmar</button>
+                          <button onClick={()=>setShowGerarModal(false)} style={{ height:'40px', padding:'0 16px', background:theme.bg, border:'1px solid '+theme.border, borderRadius:'8px', color:theme.text, fontSize:'13px', cursor:'pointer' }}>Cancelar</button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   {ativos.length===0
                     ? <div style={{ ...T.card2, padding:'3rem', textAlign:'center' }}><p style={{ fontSize:'40px' }}>📅</p><p style={{ color:theme.textMuted }}>Sem colaboradores ativos.</p></div>
@@ -1690,13 +1840,13 @@ export default function App() {
                               {days.map(d => (
                                 <th key={d.day} style={{
                                   padding:'3px 1px', textAlign:'center', fontSize:'10px', fontWeight:700,
-                                  color: d.isWeekend ? '#94a3b8' : theme.text,
-                                  background: theme.bg,
+                                  color: d.isFeriado ? '#166534' : d.isWeekend ? '#94a3b8' : theme.text,
+                                  background: d.isFeriado ? '#dcfce7' : theme.bg,
                                   border:'1px solid '+theme.border,
                                   borderRight: d.isLastOfWeek ? '2px solid '+theme.border : '1px solid '+theme.border,
                                   userSelect:'none' as const
                                 }}>
-                                  <div style={{ fontSize:'8px', fontWeight:400, color:theme.textMuted, lineHeight:1.2 }}>{DOW_CHAR[d.dow-1]}</div>
+                                  <div style={{ fontSize:'8px', fontWeight:400, color: d.isFeriado ? '#166534' : theme.textMuted, lineHeight:1.2 }}>{DOW_CHAR[d.dow-1]}</div>
                                   <div style={{ lineHeight:1.3 }}>{d.day}</div>
                                 </th>
                               ))}
@@ -1706,46 +1856,69 @@ export default function App() {
                             </tr>
                           </thead>
                           <tbody>
-                            {ativos.map((colab, ri) => {
-                              const colabDays = horarioData[selectedCompany.email]?.[horarioYearMonth]?.[colab.id] ?? {}
-                              const monthTotal = Object.values(colabDays).reduce((s, c) => s + calcMinutosTrabalhados(c), 0)
-                              const rowBg = ri % 2 === 1 ? (theme.card === '#ffffff' ? '#fafafa' : theme.bg) : theme.card
-                              return (
-                                <tr key={colab.id}>
-                                  <td title={colab.nome} style={{
-                                    padding:'5px 8px', fontSize:'11px', fontWeight:600, color:theme.text,
-                                    border:'1px solid '+theme.border, background:rowBg,
-                                    whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis'
-                                  }}>{colab.nome}</td>
-                                  {days.map(d => {
-                                    const cell = colabDays[String(d.day)]
-                                    const bg = cellBgColor(cell, d.isWeekend, rowBg, theme.bg)
-                                    const { l1, l2 } = compactLbl(cell)
-                                    return (
-                                      <td key={d.day}
-                                        onClick={()=>openCellEdit(colab.id, d.day)}
-                                        title={cellTitle(cell, d.day)}
-                                        style={{
-                                          background:bg, textAlign:'center',
-                                          border:'1px solid '+theme.border,
-                                          borderRight: d.isLastOfWeek ? '2px solid '+theme.border : '1px solid '+theme.border,
-                                          cursor:'pointer', height:'42px', verticalAlign:'middle', padding:'1px'
-                                        }}>
-                                        {l1&&<div style={{ fontSize:'8px', fontWeight:700, color:cellTxtColor(cell), lineHeight:1.15 }}>{l1}</div>}
-                                        {l2&&<div style={{ fontSize:'8px', color:theme.textMuted, lineHeight:1.15 }}>{l2}</div>}
+                            {(()=>{
+                              // Agrupar por setor (departamento)
+                              const grupos = new Map<string, typeof ativos>()
+                              ativos.forEach(c => {
+                                const dept = c.departamento?.trim() || 'Geral'
+                                if (!grupos.has(dept)) grupos.set(dept, [])
+                                grupos.get(dept)!.push(c)
+                              })
+                              const rows: React.ReactNode[] = []
+                              let rowIdx = 0
+                              grupos.forEach((colabs, dept) => {
+                                // Separador de setor
+                                rows.push(
+                                  <tr key={'sep-'+dept}>
+                                    <td colSpan={days.length + 2} style={{ padding:'4px 8px', fontSize:'10px', fontWeight:800, textTransform:'uppercase', letterSpacing:'0.06em', color:theme.textMuted, background:theme.bg, border:'1px solid '+theme.border }}>
+                                      {dept}
+                                    </td>
+                                  </tr>
+                                )
+                                colabs.forEach(colab => {
+                                  const ri = rowIdx++
+                                  const colabDays = horarioData[selectedCompany.email]?.[horarioYearMonth]?.[colab.id] ?? {}
+                                  const monthTotal = Object.values(colabDays).reduce((s, c) => s + calcMinutosTrabalhados(c), 0)
+                                  const rowBg = ri % 2 === 1 ? (theme.card === '#ffffff' ? '#fafafa' : theme.bg) : theme.card
+                                  rows.push(
+                                    <tr key={colab.id}>
+                                      <td title={colab.nome} style={{
+                                        padding:'5px 8px', fontSize:'11px', fontWeight:600, color:theme.text,
+                                        border:'1px solid '+theme.border, background:rowBg,
+                                        whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis'
+                                      }}>{colab.nome}</td>
+                                      {days.map(d => {
+                                        const cell = colabDays[String(d.day)]
+                                        const bg = cellBgColor(cell, d.isWeekend, rowBg, theme.bg)
+                                        const { l1, l2 } = compactLbl(cell)
+                                        return (
+                                          <td key={d.day}
+                                            onClick={()=>openCellEdit(colab.id, d.day)}
+                                            title={cellTitle(cell, d.day)}
+                                            style={{
+                                              background:bg, textAlign:'center',
+                                              border:'1px solid '+theme.border,
+                                              borderRight: d.isLastOfWeek ? '2px solid '+theme.border : '1px solid '+theme.border,
+                                              cursor:'pointer', height:'42px', verticalAlign:'middle', padding:'1px'
+                                            }}>
+                                            {l1&&<div style={{ fontSize:'8px', fontWeight:700, color:cellTxtColor(cell), lineHeight:1.15 }}>{l1}</div>}
+                                            {l2&&<div style={{ fontSize:'8px', color:theme.textMuted, lineHeight:1.15 }}>{l2}</div>}
+                                          </td>
+                                        )
+                                      })}
+                                      <td style={{
+                                        textAlign:'center', fontSize:'10px', fontWeight:700,
+                                        background:'#dbeafe', color:'#1d4ed8',
+                                        border:'1px solid '+theme.border, cursor:'default'
+                                      }}>
+                                        {monthTotal>0?formatHoras(monthTotal):'—'}
                                       </td>
-                                    )
-                                  })}
-                                  <td style={{
-                                    textAlign:'center', fontSize:'10px', fontWeight:700,
-                                    background:'#dbeafe', color:'#1d4ed8',
-                                    border:'1px solid '+theme.border, cursor:'default'
-                                  }}>
-                                    {monthTotal>0?formatHoras(monthTotal):'—'}
-                                  </td>
-                                </tr>
-                              )
-                            })}
+                                    </tr>
+                                  )
+                                })
+                              })
+                              return rows
+                            })()}
                           </tbody>
                         </table>
                       </div>
