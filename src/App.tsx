@@ -108,7 +108,7 @@ const TIPO_DIA_LABELS: Record<TipoDia, string> = {
   'baixa':'Baixa Médica', 'gozar-horas':'Gozar Horas', 'outro-local':'Outro Estabelecimento',
 }
 
-const FERIADOS_NACIONAIS_PT = new Set(['01-01','25-04','01-05','10-06','15-08','05-10','01-11','01-12','08-12','25-12'])
+const FERIADOS_NACIONAIS_PT = new Set(['01-01','04-25','05-01','06-10','08-15','10-05','11-01','12-01','12-08','12-25'])
 function isFeriadoPT(month: number, day: number, municipais: FeriadoMunicipal[]): boolean {
   const key = `${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`
   return FERIADOS_NACIONAIS_PT.has(key) || municipais.some(f => f.data === key)
