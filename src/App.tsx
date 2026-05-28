@@ -47,6 +47,9 @@ interface MovimentoBH { id: string; data: string; tipo: MovimentoTipo; horas: nu
 type BancoHorasMovimentos = Record<string, Record<string, MovimentoBH[]>>
 interface EditCelulaState { colabId: string; day: number; yearMonth: string }
 interface FeriadoMunicipal { id: string; nome: string; data: string }  // data = "MM-DD"
+interface TurnoTemplate { id: string; nome: string; entrada: string; saida: string }
+type WizardTipo = 'uteis' | 'fds' | 'feriados'
+interface WizardTurnos { uteis: TurnoTemplate[]; fds: TurnoTemplate[]; feriados: TurnoTemplate[] }
 
 
 // ── CULTURAL CONFIG ────────────────────────────────────────────────────────
@@ -469,6 +472,15 @@ export default function App() {
   const [fTurnoFSEntrada, setFTurnoFSEntrada] = useState('')
   const [fTurnoFSSaida, setFTurnoFSSaida] = useState('')
 
+  // -- Wizard gerar horário (5 passos)
+  const [wizardStep, setWizardStep] = useState(1)
+  const [wizardTipos, setWizardTipos] = useState<WizardTipo[]>(['uteis','fds','feriados'])
+  const [wizardTurnos, setWizardTurnos] = useState<WizardTurnos>({ uteis:[], fds:[], feriados:[] })
+  const [wizardAtrib, setWizardAtrib] = useState<Record<string,Record<string,string>>>({})
+  const [wizardFolgas, setWizardFolgas] = useState(2)
+  const [wizardRotacao, setWizardRotacao] = useState(true)
+  const [savedTurnos, setSavedTurnos] = useState<WizardTurnos>({ uteis:[], fds:[], feriados:[] })
+
   // ── Empresa editing
   const [eNome, setENome] = useState('')
   const [eNif,  setENif]  = useState('')
@@ -792,46 +804,99 @@ export default function App() {
     setBhAjusteTarget(null); setBhAjusteHoras(''); setBhAjusteMotivo(''); setBhAjusteErr('')
   }
 
-  // Geracao automatica de horario mensal com folgas rotativas
+  // Abre o wizard de gerar horário (5 passos)
+  function abrirWizardGerar() {
+    const initTurnos: WizardTurnos = savedTurnos.uteis.length > 0 || savedTurnos.fds.length > 0 || savedTurnos.feriados.length > 0
+      ? { uteis:[...savedTurnos.uteis], fds:[...savedTurnos.fds], feriados:[...savedTurnos.feriados] }
+      : { uteis:[], fds:[], feriados:[] }
+    setWizardTurnos(initTurnos)
+    setWizardStep(1)
+    setWizardTipos(['uteis','fds','feriados'])
+    setWizardFolgas(2)
+    setWizardRotacao(true)
+    const atribInit: Record<string,Record<string,string>> = {}
+    // Re-read ativos via allColaboradores at the time of opening
+    const curAtivos = (allColaboradores[selectedCompany.email] ?? []).filter(c => c.ativo)
+    curAtivos.forEach(c => {
+      atribInit[c.id] = { uteis: wizardAtrib[c.id]?.uteis||'', fds: wizardAtrib[c.id]?.fds||'', feriados: wizardAtrib[c.id]?.feriados||'' }
+    })
+    setWizardAtrib(atribInit)
+    setShowGerarModal(true)
+  }
+
+  // Geração efectiva do horário a partir dos dados do wizard
   function gerarHorarioAutomatico() {
     const { year, month } = parseYearMonth(horarioYearMonth)
     const total = daysInMonth(year, month)
     const municipais = feriadosMunicipais[selectedCompany.email] ?? []
     const newColabData: Record<string, Record<string, CelulaDia>> = {}
+
+    // Mapa rápido turnoId → TurnoTemplate
+    const allT = [...wizardTurnos.uteis, ...wizardTurnos.fds, ...wizardTurnos.feriados]
+    const turnoById = new Map(allT.map(t => [t.id, t]))
+
     ativos.forEach((colab, colabIdx) => {
       const dias: Record<string, CelulaDia> = {}
-      for (let day = 1; day <= total; day++) {
-        const dow = dayOfWeek(year, month, day)  // 1=Seg..7=Dom
-        const weekIdx = getMonthWeekIdx(year, month, day)  // 0-indexed
-        const dowZ = dow - 1  // 0=Seg..6=Dom
-        // Dias de folga rotativos: 2 por semana, baseados no indice do colaborador
-        const restA = (colabIdx + weekIdx * 2) % 7
-        const restB = (colabIdx + weekIdx * 2 + 1) % 7
-        const ehFeriado = isFeriadoPT(month, day, municipais)
-        const ehFimSemanaOuFeriado = dow >= 6 || ehFeriado
-        if (dowZ === restA || dowZ === restB) {
-          dias[String(day)] = { tipo: 'folga' }
-        } else if (ehFimSemanaOuFeriado) {
-          const t = colab.turnoFimSemana
-          if (t?.entrada && t?.saida) {
-            dias[String(day)] = { tipo: 'trabalho', entrada: t.entrada, saida: t.saida }
+
+      // 1. Calcular dias de folga rotativos para este colaborador
+      const folgaDays = new Set<number>()
+      if (wizardFolgas > 0) {
+        const weekMap = new Map<number, number[]>()
+        for (let d = 1; d <= total; d++) {
+          const wi = getMonthWeekIdx(year, month, d)
+          if (!weekMap.has(wi)) weekMap.set(wi, [])
+          weekMap.get(wi)!.push(d)
+        }
+        weekMap.forEach((weekDays, weekIdx) => {
+          const candidates: number[] = []
+          for (let k = 0; k < wizardFolgas; k++) {
+            candidates.push((colabIdx * 2 + weekIdx * 2 + k) % 7)
           }
-        } else {
-          const t = colab.turnoSemana
-          if (t?.entrada && t?.saida) {
-            dias[String(day)] = { tipo: 'trabalho', entrada: t.entrada, saida: t.saida }
+          const fSet = new Set(candidates)
+          weekDays.forEach(d => {
+            if (fSet.has(dayOfWeek(year, month, d) - 1)) folgaDays.add(d)
+          })
+        })
+        // Garantia: pelo menos 1 fim de semana de folga por mês
+        if (wizardRotacao) {
+          const temFdsFolga = [...folgaDays].some(d => dayOfWeek(year, month, d) >= 6)
+          if (!temFdsFolga) {
+            for (let d = 1; d <= total; d++) {
+              if (dayOfWeek(year, month, d) >= 6 && !folgaDays.has(d)) {
+                folgaDays.add(d)
+                for (const fd of folgaDays) {
+                  if (dayOfWeek(year, month, fd) < 6 && fd !== d) { folgaDays.delete(fd); break }
+                }
+                break
+              }
+            }
           }
         }
       }
+
+      // 2. Preencher cada dia
+      for (let day = 1; day <= total; day++) {
+        if (folgaDays.has(day)) { dias[String(day)] = { tipo:'folga' }; continue }
+        const dow = dayOfWeek(year, month, day)
+        const ehFeriado = isFeriadoPT(month, day, municipais)
+        let tipoDia: WizardTipo | null = null
+        if (ehFeriado && wizardTipos.includes('feriados')) tipoDia = 'feriados'
+        else if (dow >= 6 && wizardTipos.includes('fds')) tipoDia = 'fds'
+        else if (dow < 6 && wizardTipos.includes('uteis')) tipoDia = 'uteis'
+        if (!tipoDia) continue
+        const turnoId = wizardAtrib[colab.id]?.[tipoDia] ?? ''
+        if (!turnoId || turnoId === 'folga') { dias[String(day)] = { tipo:'folga' }; continue }
+        const t = turnoById.get(turnoId)
+        if (t) dias[String(day)] = { tipo:'trabalho', entrada:t.entrada, saida:t.saida }
+      }
       newColabData[colab.id] = dias
     })
+
     setHorarioData(prev => ({
       ...prev,
-      [selectedCompany.email]: {
-        ...(prev[selectedCompany.email] ?? {}),
-        [horarioYearMonth]: newColabData
-      }
+      [selectedCompany.email]: { ...(prev[selectedCompany.email] ?? {}), [horarioYearMonth]: newColabData }
     }))
+    setSavedTurnos({ ...wizardTurnos })
     setShowGerarModal(false)
   }
 
@@ -1791,35 +1856,237 @@ export default function App() {
                     <span style={{ fontWeight:700, fontSize:'16px', color:theme.text, minWidth:'160px', textAlign:'center' }}>{MONTH_NAMES[month-1]} {year}</span>
                     <button onClick={nextMonth} style={navBtn}>›</button>
                     <div style={{ flex:1 }}/>
-                    <button onClick={()=>setShowGerarModal(true)} style={{ ...btnMd('#d1fae5','#065f46') }}>⚡ Gerar Horário</button>
+                    <button onClick={abrirWizardGerar} style={{ ...btnMd('#d1fae5','#065f46') }}>⚡ Gerar Horário</button>
                     <button onClick={exportarPDF} style={{ ...btnMd(theme.btn, theme.btnText) }}>📄 Exportar PDF</button>
                   </div>
                   {isPastMonth&&<div style={{ ...s.alertInfo, marginBottom:'1rem' }}>A visualizar mês passado. Os dados podem ser editados mas foram já processados.</div>}
 
-                  {/* Modal confirmação gerar horário */}
-                  {showGerarModal&&(
-                    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.45)', zIndex:200, display:'flex', alignItems:'center', justifyContent:'center' }}>
-                      <div style={{ background:theme.card, border:'1px solid '+theme.border, borderRadius:'16px', padding:'1.5rem', maxWidth:'420px', width:'90%', boxShadow:'0 8px 32px rgba(0,0,0,0.18)' }}>
-                        <h3 style={{ ...T.title, fontSize:'17px', marginBottom:'8px' }}>⚡ Gerar horário automático</h3>
-                        <p style={{ fontSize:'14px', color:theme.text, marginBottom:'4px' }}><strong>{MONTH_NAMES[month-1]} {year}</strong> — {ativos.length} colaboradores ativos</p>
-                        <div style={{ ...s.alertInfo, marginBottom:'1rem', fontSize:'13px' }}>
-                          <strong>Atenção:</strong> Esta ação irá substituir todos os registos do mês selecionado.<br/>
-                          As folgas são distribuídas rotativamente (2 por semana por colaborador).
-                        </div>
-                        <p style={{ fontSize:'13px', color:theme.textMuted, marginBottom:'12px' }}>Regras aplicadas:</p>
-                        <ul style={{ fontSize:'13px', color:theme.text, margin:'0 0 1.25rem 0', paddingLeft:'1.2rem', lineHeight:'1.7' }}>
-                          <li>Dias úteis: horário de turno configurado no perfil</li>
-                          <li>Fins de semana e feriados: turno de fim de semana</li>
-                          <li>2 folgas por semana por colaborador (rotativas)</li>
-                          <li>Feriados nacionais e municipais assinalados</li>
-                        </ul>
-                        <div style={{ display:'flex', gap:'8px' }}>
-                          <button onClick={gerarHorarioAutomatico} style={{ flex:1, height:'40px', background:'#065f46', border:'none', borderRadius:'8px', color:'#fff', fontSize:'14px', fontWeight:700, cursor:'pointer' }}>Confirmar</button>
-                          <button onClick={()=>setShowGerarModal(false)} style={{ height:'40px', padding:'0 16px', background:theme.bg, border:'1px solid '+theme.border, borderRadius:'8px', color:theme.text, fontSize:'13px', cursor:'pointer' }}>Cancelar</button>
+                  {/* ── Wizard de 5 passos: Gerar Horário Automático ── */}
+                  {showGerarModal&&(()=>{
+                    const wTipoLabel: Record<string,string> = { uteis:'Dias úteis', fds:'Fins de semana', feriados:'Feriados' }
+                    const wTipoSub: Record<string,string> = { uteis:'2ª a 6ª feira', fds:'Sábado e Domingo', feriados:'Nacionais e municipais' }
+                    const TURNO_COLORS = ['#dbeafe','#dcfce7','#fef9c3','#ede9fe','#ffe4e6']
+                    const totalDiasPreview = daysInMonth(year, month)
+
+                    const validarPasso = (step: number): string|null => {
+                      if (step===1 && wizardTipos.length===0) return 'Selecione pelo menos um tipo de dia.'
+                      if (step===2) {
+                        for (const tipo of wizardTipos) {
+                          if ((wizardTurnos[tipo]??[]).length===0) return `Adicione pelo menos 1 turno para "${wTipoLabel[tipo]}".`
+                          for (const t of wizardTurnos[tipo]) {
+                            if (!t.entrada||!t.saida) return `Preencha a entrada e saída de todos os turnos de "${wTipoLabel[tipo]}".`
+                          }
+                        }
+                      }
+                      return null
+                    }
+
+                    return (
+                      <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.55)', zIndex:200, display:'flex', alignItems:'center', justifyContent:'center', padding:'1rem' }}>
+                        <div style={{ background:theme.card, border:'1px solid '+theme.border, borderRadius:'16px', width:'100%', maxWidth:'700px', maxHeight:'90vh', display:'flex', flexDirection:'column', boxShadow:'0 20px 60px rgba(0,0,0,0.3)' }}>
+
+                          {/* Cabeçalho + barra de progresso */}
+                          <div style={{ padding:'1.25rem 1.5rem 1rem', borderBottom:'1px solid '+theme.border, flexShrink:0 }}>
+                            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'12px' }}>
+                              <h3 style={{ ...T.title, fontSize:'16px', margin:0 }}>⚡ Gerar Horário — {MONTH_NAMES[month-1]} {year}</h3>
+                              <button onClick={()=>setShowGerarModal(false)} style={{ background:'none', border:'none', fontSize:'18px', cursor:'pointer', color:theme.textMuted, lineHeight:1 }}>✕</button>
+                            </div>
+                            <div style={{ display:'flex', alignItems:'center', gap:0 }}>
+                              {[1,2,3,4,5].map((i,idx) => [
+                                <div key={'c'+i} style={{ width:'30px', height:'30px', borderRadius:'50%', background:i<wizardStep?'#065f46':i===wizardStep?theme.btn:theme.bg, border:i<=wizardStep?'none':'1px solid '+theme.border, color:i<=wizardStep?'#fff':theme.textMuted, display:'flex', alignItems:'center', justifyContent:'center', fontSize:'12px', fontWeight:700, flexShrink:0, transition:'background 0.2s' }}>{i}</div>,
+                                idx<4 ? <div key={'l'+i} style={{ flex:1, height:'3px', background:i<wizardStep?'#065f46':theme.border, transition:'background 0.2s' }}/> : null
+                              ].filter(Boolean))}
+                            </div>
+                            <p style={{ fontSize:'12px', color:theme.textMuted, marginTop:'8px', fontWeight:600 }}>
+                              Passo {wizardStep} de 5 — {['Tipo de dias','Definir turnos','Atribuir colaboradores','Configurar folgas','Confirmar e gerar'][wizardStep-1]}
+                            </p>
+                          </div>
+
+                          {/* Corpo do wizard */}
+                          <div style={{ flex:1, overflowY:'auto', padding:'1.5rem' }}>
+
+                            {/* ─ PASSO 1: Tipo de dias ─ */}
+                            {wizardStep===1&&(
+                              <div>
+                                <p style={{ fontSize:'14px', color:theme.text, marginBottom:'1rem' }}>Selecione os tipos de dias a configurar:</p>
+                                {(['uteis','fds','feriados'] as WizardTipo[]).map(tipo=>(
+                                  <label key={tipo} style={{ display:'flex', alignItems:'center', gap:'14px', padding:'14px 16px', borderRadius:'10px', border:'2px solid '+(wizardTipos.includes(tipo)?'#065f46':theme.border), marginBottom:'10px', cursor:'pointer', background:wizardTipos.includes(tipo)?'#f0fdf4':theme.card, transition:'all 0.15s' }}>
+                                    <input type="checkbox" checked={wizardTipos.includes(tipo)} onChange={e=>{ if(e.target.checked) setWizardTipos(p=>[...p,tipo]); else setWizardTipos(p=>p.filter(x=>x!==tipo)) }} style={{ width:'18px', height:'18px', accentColor:'#065f46', cursor:'pointer' }}/>
+                                    <div>
+                                      <div style={{ fontSize:'14px', fontWeight:700, color:theme.text }}>{wTipoLabel[tipo]}</div>
+                                      <div style={{ fontSize:'12px', color:theme.textMuted }}>{wTipoSub[tipo]}</div>
+                                    </div>
+                                    {wizardTipos.includes(tipo)&&<span style={{ marginLeft:'auto', fontSize:'18px' }}>✅</span>}
+                                  </label>
+                                ))}
+                              </div>
+                            )}
+
+                            {/* ─ PASSO 2: Definir turnos ─ */}
+                            {wizardStep===2&&(
+                              <div>
+                                {wizardTipos.map(tipo=>(
+                                  <div key={tipo} style={{ marginBottom:'1.75rem' }}>
+                                    <p style={{ ...T.sectionLbl, marginBottom:'10px' }}>{wTipoLabel[tipo]}</p>
+                                    {(wizardTurnos[tipo]??[]).map((t,ti)=>(
+                                      <div key={t.id} style={{ display:'grid', gridTemplateColumns:'1fr 110px 110px 38px', gap:'8px', alignItems:'flex-end', marginBottom:'8px' }}>
+                                        <div>
+                                          {ti===0&&<label style={T.label}>Nome do turno</label>}
+                                          <input style={T.input} placeholder={tipo==='uteis'?'Ex: Turno Manhã':'Ex: Turno FdS'} value={t.nome} onChange={e=>setWizardTurnos(p=>({...p,[tipo]:p[tipo].map((x,i)=>i===ti?{...x,nome:e.target.value}:x)}))}/>
+                                        </div>
+                                        <div>
+                                          {ti===0&&<label style={T.label}>Entrada</label>}
+                                          <input style={T.input} type="time" value={t.entrada} onChange={e=>setWizardTurnos(p=>({...p,[tipo]:p[tipo].map((x,i)=>i===ti?{...x,entrada:e.target.value}:x)}))}/>
+                                        </div>
+                                        <div>
+                                          {ti===0&&<label style={T.label}>Saída</label>}
+                                          <input style={T.input} type="time" value={t.saida} onChange={e=>setWizardTurnos(p=>({...p,[tipo]:p[tipo].map((x,i)=>i===ti?{...x,saida:e.target.value}:x)}))}/>
+                                        </div>
+                                        <button onClick={()=>setWizardTurnos(p=>({...p,[tipo]:p[tipo].filter((_,i)=>i!==ti)}))} style={{ height:'36px', background:'#fef2f2', color:'#b91c1c', border:'1px solid #fecaca', borderRadius:'6px', fontSize:'14px', cursor:'pointer', alignSelf:'flex-end' }}>✕</button>
+                                      </div>
+                                    ))}
+                                    <button onClick={()=>setWizardTurnos(p=>({...p,[tipo]:[...p[tipo],{id:`${tipo}-${Date.now()}`,nome:'',entrada:'',saida:''}]}))} style={{ height:'32px', padding:'0 12px', background:'none', border:'1px dashed '+theme.border, borderRadius:'6px', fontSize:'12px', color:theme.textMuted, cursor:'pointer' }}>+ Adicionar turno</button>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+
+                            {/* ─ PASSO 3: Atribuir colaboradores ─ */}
+                            {wizardStep===3&&(
+                              <div>
+                                <p style={{ fontSize:'13px', color:theme.textMuted, marginBottom:'1rem' }}>Para cada colaborador, selecione o turno atribuído em cada tipo de dia. Escolha "Folga" para dias de descanso fixos.</p>
+                                {ativos.map(colab=>(
+                                  <div key={colab.id} style={{ display:'flex', alignItems:'center', gap:'10px', padding:'10px 0', borderBottom:'1px solid '+theme.border, flexWrap:'wrap' }}>
+                                    <div style={{ width:'32px', height:'32px', borderRadius:'50%', background:theme.bg, display:'flex', alignItems:'center', justifyContent:'center', fontSize:'13px', fontWeight:700, color:theme.btn, flexShrink:0 }}>{colab.nome.charAt(0)}</div>
+                                    <span style={{ fontSize:'13px', fontWeight:600, color:theme.text, minWidth:'130px', flex:1 }}>{colab.nome}</span>
+                                    {wizardTipos.map(tipo=>{
+                                      const turnoId = wizardAtrib[colab.id]?.[tipo]??''
+                                      const turnoIdx = (wizardTurnos[tipo]??[]).findIndex(t=>t.id===turnoId)
+                                      const selBg = turnoId==='folga'?'#fef9c3':turnoIdx>=0?TURNO_COLORS[turnoIdx%TURNO_COLORS.length]:'transparent'
+                                      return (
+                                        <div key={tipo} style={{ display:'flex', flexDirection:'column', gap:'3px', minWidth:'140px' }}>
+                                          <label style={{ fontSize:'10px', fontWeight:700, color:theme.textMuted, textTransform:'uppercase', letterSpacing:'0.06em' }}>{wTipoLabel[tipo]}</label>
+                                          <select value={turnoId} onChange={e=>setWizardAtrib(p=>({...p,[colab.id]:{...(p[colab.id]??{}),[tipo]:e.target.value}}))} style={{ ...T.select, height:'34px', fontSize:'12px', background:selBg }}>
+                                            <option value="">— Sem turno —</option>
+                                            <option value="folga">🌙 Folga</option>
+                                            {(wizardTurnos[tipo]??[]).map((t,ti)=><option key={t.id} value={t.id} style={{ background:TURNO_COLORS[ti%TURNO_COLORS.length] }}>{t.nome||'(sem nome)'} · {t.entrada}–{t.saida}</option>)}
+                                          </select>
+                                        </div>
+                                      )
+                                    })}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+
+                            {/* ─ PASSO 4: Configurar folgas ─ */}
+                            {wizardStep===4&&(
+                              <div>
+                                <div style={{ display:'grid', gridTemplateColumns: isMobile?'1fr':'1fr 1fr', gap:'1rem', marginBottom:'1.5rem' }}>
+                                  <div>
+                                    <label style={T.label}>Folgas por semana por colaborador</label>
+                                    <div style={{ display:'flex', alignItems:'center', gap:'10px', marginTop:'4px' }}>
+                                      <button onClick={()=>setWizardFolgas(p=>Math.max(0,p-1))} style={{ width:'32px', height:'32px', borderRadius:'6px', background:theme.bg, border:'1px solid '+theme.border, color:theme.text, fontSize:'18px', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>−</button>
+                                      <span style={{ fontSize:'20px', fontWeight:700, color:theme.text, minWidth:'28px', textAlign:'center' }}>{wizardFolgas}</span>
+                                      <button onClick={()=>setWizardFolgas(p=>Math.min(7,p+1))} style={{ width:'32px', height:'32px', borderRadius:'6px', background:theme.bg, border:'1px solid '+theme.border, color:theme.text, fontSize:'18px', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>+</button>
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <label style={T.label}>Opções</label>
+                                    <label style={{ display:'flex', alignItems:'center', gap:'8px', marginTop:'8px', cursor:'pointer', fontSize:'13px', color:theme.text }}>
+                                      <input type="checkbox" checked={wizardRotacao} onChange={e=>setWizardRotacao(e.target.checked)} style={{ width:'16px', height:'16px', accentColor:'#065f46', cursor:'pointer' }}/>
+                                      Rotação automática semanal
+                                    </label>
+                                    {wizardRotacao&&<p style={{ fontSize:'11px', color:theme.textMuted, marginTop:'4px', marginLeft:'24px' }}>Garante pelo menos 1 fim de semana por mês para cada colaborador.</p>}
+                                  </div>
+                                </div>
+
+                                <p style={{ ...T.sectionLbl, marginBottom:'8px' }}>Pré-visualização das folgas — {MONTH_NAMES[month-1]} {year}</p>
+                                <div style={{ overflowX:'auto', border:'1px solid '+theme.border, borderRadius:'8px' }}>
+                                  <table style={{ borderCollapse:'collapse', fontSize:'10px', minWidth:'100%' }}>
+                                    <thead>
+                                      <tr style={{ background:theme.bg }}>
+                                        <th style={{ padding:'5px 8px', textAlign:'left', fontWeight:700, color:theme.textMuted, border:'1px solid '+theme.border, whiteSpace:'nowrap' }}>Colaborador</th>
+                                        {Array.from({length:totalDiasPreview},(_,i)=>{
+                                          const d=i+1; const dow=dayOfWeek(year,month,d)
+                                          return <th key={d} style={{ padding:'3px 2px', textAlign:'center', fontWeight:600, color:dow>=6?'#94a3b8':theme.textMuted, border:'1px solid '+theme.border, minWidth:'18px' }}>{d}</th>
+                                        })}
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {ativos.map((colab,colabIdx)=>{
+                                        const fp=new Set<number>()
+                                        if(wizardFolgas>0){
+                                          const wm=new Map<number,number[]>()
+                                          for(let d=1;d<=totalDiasPreview;d++){const wi=getMonthWeekIdx(year,month,d);if(!wm.has(wi))wm.set(wi,[]);wm.get(wi)!.push(d)}
+                                          wm.forEach((wd,wi)=>{const cs=[];for(let k=0;k<wizardFolgas;k++)cs.push((colabIdx*2+wi*2+k)%7);const fs=new Set(cs);wd.forEach(d=>{if(fs.has(dayOfWeek(year,month,d)-1))fp.add(d)})})
+                                          if(wizardRotacao){const hf=[...fp].some(d=>dayOfWeek(year,month,d)>=6);if(!hf){for(let d=1;d<=totalDiasPreview;d++){if(dayOfWeek(year,month,d)>=6&&!fp.has(d)){fp.add(d);for(const fd of fp){if(dayOfWeek(year,month,fd)<6&&fd!==d){fp.delete(fd);break}}break}}}}
+                                        }
+                                        return (
+                                          <tr key={colab.id}>
+                                            <td style={{ padding:'4px 8px', fontWeight:600, color:theme.text, border:'1px solid '+theme.border, whiteSpace:'nowrap' }}>{colab.nome}</td>
+                                            {Array.from({length:totalDiasPreview},(_,i)=>{
+                                              const d=i+1; const dow=dayOfWeek(year,month,d); const isFolga=fp.has(d)
+                                              return <td key={d} style={{ textAlign:'center', border:'1px solid '+theme.border, background:isFolga?'#fef9c3':dow>=6?theme.bg:'', padding:'2px', color:isFolga?'#92400e':'' }}>{isFolga?'F':''}</td>
+                                            })}
+                                          </tr>
+                                        )
+                                      })}
+                                    </tbody>
+                                  </table>
+                                </div>
+                                <p style={{ fontSize:'11px', color:theme.textMuted, marginTop:'6px' }}>F = folga  · fundo cinzento = fim de semana</p>
+                              </div>
+                            )}
+
+                            {/* ─ PASSO 5: Confirmar e gerar ─ */}
+                            {wizardStep===5&&(
+                              <div>
+                                <div style={{ ...T.card2, padding:'1rem', marginBottom:'1rem', background:'#f0fdf4', border:'1px solid #bbf7d0' }}>
+                                  <p style={{ fontSize:'14px', fontWeight:700, color:'#166534', marginBottom:'4px' }}>📅 {MONTH_NAMES[month-1]} {year} · {ativos.length} colaboradores ativos</p>
+                                  <p style={{ fontSize:'13px', color:theme.textMuted }}>Tipos de dias: {wizardTipos.map(t=>wTipoLabel[t]).join(' · ')}</p>
+                                  <p style={{ fontSize:'13px', color:theme.textMuted }}>Folgas: {wizardFolgas}/semana{wizardRotacao?' com rotação automática':''}</p>
+                                </div>
+
+                                {wizardTipos.map(tipo=>wizardTurnos[tipo].length>0&&(
+                                  <div key={tipo} style={{ marginBottom:'12px' }}>
+                                    <p style={{ fontSize:'11px', fontWeight:700, color:theme.textMuted, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:'5px' }}>{wTipoLabel[tipo]}</p>
+                                    {wizardTurnos[tipo].map((t,ti)=>(
+                                      <div key={t.id} style={{ display:'flex', alignItems:'center', gap:'8px', padding:'6px 10px', borderRadius:'6px', background:TURNO_COLORS[ti%TURNO_COLORS.length], marginBottom:'4px', fontSize:'13px' }}>
+                                        <span style={{ fontWeight:700, color:theme.text }}>{t.nome||'(sem nome)'}</span>
+                                        <span style={{ color:theme.textMuted }}>{t.entrada} – {t.saida}</span>
+                                        <span style={{ marginLeft:'auto', fontSize:'11px', color:theme.textMuted }}>
+                                          {ativos.filter(c=>(wizardAtrib[c.id]?.[tipo]??'')===t.id).map(c=>c.nome).join(', ')||'—'}
+                                        </span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                ))}
+
+                                <div style={{ ...s.alertInfo, marginTop:'1rem', fontSize:'13px' }}>
+                                  <strong>Atenção:</strong> Todos os registos existentes de <strong>{MONTH_NAMES[month-1]} {year}</strong> serão substituídos.
+                                  Os turnos ficam guardados como templates para o mês seguinte.
+                                </div>
+                              </div>
+                            )}
+
+                          </div>
+
+                          {/* Rodapé com botões de navegação */}
+                          <div style={{ padding:'1rem 1.5rem', borderTop:'1px solid '+theme.border, display:'flex', alignItems:'center', gap:'8px', flexShrink:0 }}>
+                            {wizardStep>1&&<button onClick={()=>setWizardStep(p=>p-1)} style={{ height:'38px', padding:'0 16px', background:theme.bg, border:'1px solid '+theme.border, borderRadius:'8px', color:theme.text, fontSize:'13px', cursor:'pointer' }}>← Voltar</button>}
+                            <div style={{ flex:1 }}/>
+                            <button onClick={()=>setShowGerarModal(false)} style={{ height:'38px', padding:'0 16px', background:theme.bg, border:'1px solid '+theme.border, borderRadius:'8px', color:theme.text, fontSize:'13px', cursor:'pointer' }}>Cancelar</button>
+                            {wizardStep<5
+                              ?<button onClick={()=>{ const err=validarPasso(wizardStep); if(err){alert(err);return} setWizardStep(p=>p+1) }} style={{ height:'38px', padding:'0 20px', background:theme.btn, border:'none', borderRadius:'8px', color:theme.btnText, fontSize:'14px', fontWeight:700, cursor:'pointer' }}>Seguinte →</button>
+                              :<button onClick={gerarHorarioAutomatico} style={{ height:'38px', padding:'0 20px', background:'#065f46', border:'none', borderRadius:'8px', color:'#fff', fontSize:'14px', fontWeight:700, cursor:'pointer' }}>✅ Confirmar e Gerar</button>
+                            }
+                          </div>
+
                         </div>
                       </div>
-                    </div>
-                  )}
+                    )
+                  })()}
 
                   {ativos.length===0
                     ? <div style={{ ...T.card2, padding:'3rem', textAlign:'center' }}><p style={{ fontSize:'40px' }}>📅</p><p style={{ color:theme.textMuted }}>Sem colaboradores ativos.</p></div>
