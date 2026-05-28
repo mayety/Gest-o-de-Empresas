@@ -24,8 +24,6 @@ interface Colaborador {
   morada: { rua: string; numero: string; andar: string; codigoPostal: string; localidade: string; distrito: string }
   documentos: Documento[]
   ativo: boolean; dataSaida?: string; motivoSaida?: string
-  turnoSemana?: { entrada: string; saida: string }
-  turnoFimSemana?: { entrada: string; saida: string }
 }
 interface Theme {
   bg: string; card: string; border: string; text: string; textMuted: string
@@ -466,12 +464,6 @@ export default function App() {
   const [feriadosMunicipais, setFeriadosMunicipais] = useState<Record<string, FeriadoMunicipal[]>>({})
   const [novoFeriadoNome, setNovoFeriadoNome] = useState('')
   const [novoFeriadoData, setNovoFeriadoData] = useState('')
-  // -- Turno form fields (dias uteis e fim de semana)
-  const [fTurnoEntrada, setFTurnoEntrada] = useState('')
-  const [fTurnoSaida, setFTurnoSaida] = useState('')
-  const [fTurnoFSEntrada, setFTurnoFSEntrada] = useState('')
-  const [fTurnoFSSaida, setFTurnoFSSaida] = useState('')
-
   // -- Wizard gerar horário (5 passos)
   const [wizardStep, setWizardStep] = useState(1)
   const [wizardTipos, setWizardTipos] = useState<WizardTipo[]>(['uteis','fds','feriados'])
@@ -641,7 +633,6 @@ export default function App() {
     setFNome(''); setFNif(''); setFCargo(''); setFDept(''); setFEmail(''); setFTel('')
     setFDataAdm(''); setFContrato('sem-termo'); setFRua(''); setFNumero(''); setFAndar('')
     setFCP(''); setFLocalidade(''); setFDistrito(''); setFormColabErr('')
-    setFTurnoEntrada(''); setFTurnoSaida(''); setFTurnoFSEntrada(''); setFTurnoFSSaida('')
   }
   function iniciarEdicao(c: Colaborador) {
     setEditingColab(c)
@@ -649,19 +640,13 @@ export default function App() {
     setFEmail(c.email); setFTel(c.telefone); setFDataAdm(c.dataAdmissao); setFContrato(c.tipoContrato)
     setFRua(c.morada.rua); setFNumero(c.morada.numero); setFAndar(c.morada.andar)
     setFCP(c.morada.codigoPostal); setFLocalidade(c.morada.localidade); setFDistrito(c.morada.distrito)
-    setFTurnoEntrada(c.turnoSemana?.entrada ?? '')
-    setFTurnoSaida(c.turnoSemana?.saida ?? '')
-    setFTurnoFSEntrada(c.turnoFimSemana?.entrada ?? '')
-    setFTurnoFSSaida(c.turnoFimSemana?.saida ?? '')
     setFormColabErr(''); setColabView('form')
   }
   function adicionarColaborador() {
     setFormColabErr('')
     if (!fNome||!fNif||!fCargo||!fDept||!fEmail||!fTel||!fDataAdm) { setFormColabErr('Preencha todos os campos obrigatórios (*).'); return }
     if (!validarEmail(fEmail)) { setFormColabErr('E-mail inválido.'); return }
-    const turnoSemanaNew = fTurnoEntrada && fTurnoSaida ? {entrada:fTurnoEntrada,saida:fTurnoSaida} : undefined
-    const turnoFimSemanaNew = fTurnoFSEntrada && fTurnoFSSaida ? {entrada:fTurnoFSEntrada,saida:fTurnoFSSaida} : undefined
-    const novo: Colaborador = { id:Date.now().toString(), nome:fNome, nif:fNif, cargo:fCargo, departamento:fDept, email:fEmail, telefone:fTel, dataAdmissao:fDataAdm, tipoContrato:fContrato, ativo:true, morada:{rua:fRua,numero:fNumero,andar:fAndar,codigoPostal:fCP,localidade:fLocalidade,distrito:fDistrito}, documentos:[], turnoSemana:turnoSemanaNew, turnoFimSemana:turnoFimSemanaNew }
+    const novo: Colaborador = { id:Date.now().toString(), nome:fNome, nif:fNif, cargo:fCargo, departamento:fDept, email:fEmail, telefone:fTel, dataAdmissao:fDataAdm, tipoContrato:fContrato, ativo:true, morada:{rua:fRua,numero:fNumero,andar:fAndar,codigoPostal:fCP,localidade:fLocalidade,distrito:fDistrito}, documentos:[] }
     updateColaboradores(prev=>[...prev,novo]); resetFormColab(); setColabView('list')
   }
   function atualizarColaborador() {
@@ -669,9 +654,7 @@ export default function App() {
     setFormColabErr('')
     if (!fNome||!fNif||!fCargo||!fDept||!fEmail||!fTel||!fDataAdm) { setFormColabErr('Preencha todos os campos obrigatórios (*).'); return }
     if (!validarEmail(fEmail)) { setFormColabErr('E-mail inválido.'); return }
-    const turnoSemanaUpd = fTurnoEntrada && fTurnoSaida ? {entrada:fTurnoEntrada,saida:fTurnoSaida} : undefined
-    const turnoFimSemanaUpd = fTurnoFSEntrada && fTurnoFSSaida ? {entrada:fTurnoFSEntrada,saida:fTurnoFSSaida} : undefined
-    const updated: Colaborador = { ...editingColab, nome:fNome, nif:fNif, cargo:fCargo, departamento:fDept, email:fEmail, telefone:fTel, dataAdmissao:fDataAdm, tipoContrato:fContrato, morada:{rua:fRua,numero:fNumero,andar:fAndar,codigoPostal:fCP,localidade:fLocalidade,distrito:fDistrito}, turnoSemana:turnoSemanaUpd, turnoFimSemana:turnoFimSemanaUpd }
+    const updated: Colaborador = { ...editingColab, nome:fNome, nif:fNif, cargo:fCargo, departamento:fDept, email:fEmail, telefone:fTel, dataAdmissao:fDataAdm, tipoContrato:fContrato, morada:{rua:fRua,numero:fNumero,andar:fAndar,codigoPostal:fCP,localidade:fLocalidade,distrito:fDistrito} }
     updateColaboradores(prev=>prev.map(c=>c.id===editingColab.id?updated:c))
     setSelectedColab(updated); setEditingColab(null); resetFormColab(); setColabView('detail')
   }
@@ -1591,13 +1574,6 @@ export default function App() {
                           {Object.entries(CONTRATO_LABELS).map(([k,v])=><option key={k} value={k}>{v}</option>)}
                         </select>
                       </div>
-                    </div>
-                    <p style={{ ...T.sectionLbl, marginTop:'12px' }}>Turnos de trabalho</p>
-                    <div style={{ display:'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap:'10px', marginBottom:'0.875rem' }}>
-                      <div><label style={T.label}>Turno dias úteis — Entrada</label><input style={T.input} type="time" value={fTurnoEntrada} onChange={e=>setFTurnoEntrada(e.target.value)}/></div>
-                      <div><label style={T.label}>Turno dias úteis — Saída</label><input style={T.input} type="time" value={fTurnoSaida} onChange={e=>setFTurnoSaida(e.target.value)}/></div>
-                      <div><label style={T.label}>Turno fim de semana/feriado — Entrada</label><input style={T.input} type="time" value={fTurnoFSEntrada} onChange={e=>setFTurnoFSEntrada(e.target.value)}/></div>
-                      <div><label style={T.label}>Turno fim de semana/feriado — Saída</label><input style={T.input} type="time" value={fTurnoFSSaida} onChange={e=>setFTurnoFSSaida(e.target.value)}/></div>
                     </div>
                     <p style={{ ...T.sectionLbl, marginTop:'12px' }}>Morada</p>
                     <div style={{ display:'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : '2fr 1fr 1fr', gap:'10px', marginBottom:'0.875rem' }}>
