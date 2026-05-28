@@ -190,22 +190,23 @@ function computeBHTotals(
 ): { extraMesAtual: number; horasGozadasMes: number; acumuladasTotal: number; saldo: number } {
   const companyData = horarioData[email] ?? {}
   let extraMesAtual = 0; let horasGozadasMes = 0
-  let acumuladasTotal = 0; let totalGozadasAllTime = 0
+  let totalGanhoAll = 0; let totalConsumidoAll = 0
 
   for (const [ym, colabMap] of Object.entries(companyData)) {
     const colabDays = (colabMap as Record<string, Record<string, CelulaDia>>)[colabId] ?? {}
     for (const cell of Object.values(colabDays)) {
       const delta = calcDeltaBH(cell)
-      acumuladasTotal += delta
+      if (delta > 0) totalGanhoAll += delta
+      if (delta < 0) totalConsumidoAll += delta
       if (ym === currentYM) {
         if (delta > 0) extraMesAtual += delta
-        if (cell.tipo === 'gozar-horas') horasGozadasMes += calcMinutosTrabalhados(cell)
+        if (delta < 0) horasGozadasMes += -delta
       }
-      if (cell.tipo === 'gozar-horas') totalGozadasAllTime += calcMinutosTrabalhados(cell)
     }
   }
-  for (const mov of manualMovimentos) acumuladasTotal += mov.horas * 60
-  return { extraMesAtual, horasGozadasMes, acumuladasTotal, saldo: acumuladasTotal }
+  const manualTotal = manualMovimentos.reduce((s, m) => s + m.horas * 60, 0)
+  const saldo = totalGanhoAll + totalConsumidoAll + manualTotal
+  return { extraMesAtual, horasGozadasMes, acumuladasTotal: totalGanhoAll, saldo }
 }
 
 // ── THEMES ────────────────────────────────────────────────────────────────
@@ -1884,7 +1885,7 @@ export default function App() {
                                 </div>
                                 <span style={{ fontSize:'13px', color: extraH>0?'#16a34a':theme.textMuted, fontWeight:600 }}>{extraH>0?`+${extraH.toFixed(2)}h`:'0h'}</span>
                                 <span style={{ fontSize:'13px', color: acumH>0?'#16a34a':acumH<0?'#dc2626':theme.textMuted, fontWeight:600 }}>{acumH>=0?'+':''}{acumH.toFixed(2)}h</span>
-                                <span style={{ fontSize:'13px', color: gozH>0?'#f97316':theme.textMuted }}>{gozH>0?`-${gozH.toFixed(2)}h`:'0h'}</span>
+                                <span style={{ fontSize:'13px', color: gozH>0?'#f97316':theme.textMuted }}>{gozH>0?`+${gozH.toFixed(2)}h`:'0h'}</span>
                                 <span style={{ fontSize:'14px', fontWeight:700, color: saldoH>0?'#16a34a':saldoH<0?'#dc2626':theme.textMuted }}>{saldoH>=0?'+':''}{saldoH.toFixed(2)}h</span>
                                 <span style={{ fontSize:'12px', color:theme.textMuted, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
                                   {movimentos.filter(m=>m.tipo==='manual').length>0 ? movimentos.filter(m=>m.tipo==='manual').slice(-1)[0]!.motivo : '—'}
