@@ -1258,8 +1258,8 @@ export default function App() {
         )}
 
         {/* ══ MAIN CONTENT ══ */}
-        <div style={{ marginLeft: isMobile ? 0 : SIDEBAR_W, flex:1, padding: isMobile ? '0.75rem' : (dashTab==='horarios'||dashTab==='banco-horas') ? '0.5rem' : '1.5rem', paddingTop: isMobile ? TOPBAR_H+16 : (dashTab==='horarios'||dashTab==='banco-horas') ? '0.75rem' : '1.5rem', minHeight:'100vh', minWidth:0, display:'flex', flexDirection:'column' }}>
-          <div style={{ maxWidth: (dashTab==='horarios'||dashTab==='banco-horas') ? '100%' : '1100px', margin:'0 auto', width:'100%', flex:1, display:'flex', flexDirection:'column' }}>
+        <div style={{ marginLeft: isMobile ? 0 : SIDEBAR_W, flex:1, paddingTop: isMobile ? TOPBAR_H+16 : '1rem', paddingBottom: '1rem', paddingLeft: isMobile ? '0.75rem' : ((dashTab==='horarios'||dashTab==='banco-horas')) ? 0 : '1.5rem', paddingRight: isMobile ? '0.75rem' : ((dashTab==='horarios'||dashTab==='banco-horas')) ? '8px' : '1.5rem', minHeight:'100vh', minWidth:0, display:'flex', flexDirection:'column' }}>
+          <div style={{ maxWidth: ((dashTab==='horarios'||dashTab==='banco-horas')) ? 'none' : '1100px', marginLeft: ((dashTab==='horarios'||dashTab==='banco-horas')) ? 0 : 'auto', marginRight: ((dashTab==='horarios'||dashTab==='banco-horas')) ? 0 : 'auto', width:'100%', flex:1, display:'flex', flexDirection:'column' }}>
 
             {/* ═══ COLABORADORES TAB ═══ */}
             {dashTab==='colaboradores'&&(<div style={{ flex:1, display:'flex', flexDirection:'column' }}>
