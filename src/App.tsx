@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+﻿import { useState, useEffect, useRef } from 'react'
 
 declare global { interface Window { google: any } }
 
@@ -1258,8 +1258,8 @@ export default function App() {
         )}
 
         {/* ══ MAIN CONTENT ══ */}
-        <div style={{ marginLeft: isMobile ? 0 : SIDEBAR_W, flex:1, paddingTop: isMobile ? TOPBAR_H+16 : '1rem', paddingBottom: '1rem', paddingLeft: isMobile ? '0.75rem' : ((dashTab==='horarios'||dashTab==='banco-horas')) ? 0 : '1.5rem', paddingRight: isMobile ? '0.75rem' : ((dashTab==='horarios'||dashTab==='banco-horas')) ? '8px' : '1.5rem', minHeight:'100vh', minWidth:0, display:'flex', flexDirection:'column' }}>
-          <div style={{ maxWidth: ((dashTab==='horarios'||dashTab==='banco-horas')) ? 'none' : '1100px', marginLeft: ((dashTab==='horarios'||dashTab==='banco-horas')) ? 0 : 'auto', marginRight: ((dashTab==='horarios'||dashTab==='banco-horas')) ? 0 : 'auto', width:'100%', flex:1, display:'flex', flexDirection:'column' }}>
+        <div style={{ marginLeft: isMobile ? 0 : SIDEBAR_W, flex:1, paddingTop: isMobile ? TOPBAR_H+16 : '1rem', paddingBottom: '1rem', paddingLeft: isMobile ? '0.75rem' : '1.5rem', paddingRight: isMobile ? '0.75rem' : '1.5rem', minHeight:'100vh', minWidth:0, display:'flex', flexDirection:'column' }}>
+          <div style={{ maxWidth: (dashTab==='horarios'||dashTab==='banco-horas') ? 'none' : '1100px', marginLeft: (dashTab==='horarios'||dashTab==='banco-horas') ? 0 : 'auto', marginRight: (dashTab==='horarios'||dashTab==='banco-horas') ? 0 : 'auto', width:'100%', flex:1, display:'flex', flexDirection:'column' }}>
 
             {/* ═══ COLABORADORES TAB ═══ */}
             {dashTab==='colaboradores'&&(<div style={{ flex:1, display:'flex', flexDirection:'column' }}>
@@ -1674,7 +1674,7 @@ export default function App() {
                     ? <div style={{ ...T.card2, padding:'3rem', textAlign:'center' }}><p style={{ fontSize:'40px' }}>📅</p><p style={{ color:theme.textMuted }}>Sem colaboradores ativos.</p></div>
                     : (
                       /* table-layout:fixed + width:100% → encaixa sempre sem overflow horizontal */
-                      <div style={{ overflowY:'auto', flex:1 }}>
+                      <div style={{ ...T.card2, overflow:'hidden', flex:1 }}>
                         <table style={{ width:'100%', tableLayout:'fixed', borderCollapse:'collapse' }}>
                           <colgroup>
                             <col style={{ width:'13%' }}/>
