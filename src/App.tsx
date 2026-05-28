@@ -183,25 +183,6 @@ function cellBgColor(cell: CelulaDia | undefined, isWeekend: boolean, cardColor:
   }
 }
 
-function cellLabel(cell: CelulaDia | undefined): string {
-  if (!cell) return ''
-  switch (cell.tipo) {
-    case 'folga':       return 'F'
-    case 'ferias':      return 'Férias'
-    case 'baixa':       return 'B'
-    case 'gozar-horas': return cell.entrada && cell.saida ? `G ${cell.entrada}` : 'G'
-    case 'outro-local': return cell.local ? cell.local.substring(0,4) : 'OL'
-    case 'trabalho':    return cell.entrada && cell.saida ? `${cell.entrada}` : ''
-    default:            return ''
-  }
-}
-function cellLabel2(cell: CelulaDia | undefined): string {
-  if (!cell) return ''
-  if (cell.tipo === 'trabalho' || cell.tipo === 'gozar-horas' || cell.tipo === 'outro-local') {
-    return cell.saida ?? ''
-  }
-  return ''
-}
 
 function computeBHTotals(
   colabId: string, email: string, currentYM: string,
@@ -1278,7 +1259,7 @@ export default function App() {
 
         {/* ══ MAIN CONTENT ══ */}
         <div style={{ marginLeft: isMobile ? 0 : SIDEBAR_W, flex:1, padding: isMobile ? '1rem' : '1.5rem', paddingTop: isMobile ? TOPBAR_H+16 : '1.5rem', minHeight:'100vh', minWidth:0, display:'flex', flexDirection:'column' }}>
-          <div style={{ maxWidth:'1100px', margin:'0 auto', width:'100%', flex:1, display:'flex', flexDirection:'column' }}>
+          <div style={{ maxWidth: (dashTab==='horarios'||dashTab==='banco-horas') ? '100%' : '1100px', margin:'0 auto', width:'100%', flex:1, display:'flex', flexDirection:'column' }}>
 
             {/* ═══ COLABORADORES TAB ═══ */}
             {dashTab==='colaboradores'&&(<div style={{ flex:1, display:'flex', flexDirection:'column' }}>
@@ -1647,29 +1628,35 @@ export default function App() {
               const isPastMonth = horarioYearMonth < nowYM
               const totalDias = daysInMonth(year, month)
 
-              // Agrupar dias em semanas (Seg=1 .. Dom=7)
-              type DayInfo = { day: number; dow: number; isWeekend: boolean }
-              type WeekInfo = { weekNum: number; startDay: number; endDay: number; days: DayInfo[] }
-              const weeks: WeekInfo[] = []
-              let wNum = 1
-              let wDays: DayInfo[] = []
-              for (let d = 1; d <= totalDias; d++) {
-                const dow = dayOfWeek(year, month, d)
-                wDays.push({ day: d, dow, isWeekend: dow >= 6 })
-                if (dow === 7 || d === totalDias) {
-                  weeks.push({ weekNum: wNum++, startDay: wDays[0].day, endDay: wDays[wDays.length-1].day, days: wDays })
-                  wDays = []
-                }
-              }
+              // Um array por dia do mês com metadados
+              const days = Array.from({ length: totalDias }, (_, i) => {
+                const day = i + 1
+                const dow = dayOfWeek(year, month, day)
+                return { day, dow, isWeekend: dow >= 6, isLastOfWeek: dow === 7 || day === totalDias }
+              })
 
-              const DOW_ABBR = ['','Seg','Ter','Qua','Qui','Sex','Sáb','Dom']
-              const cellTxtColor = (cell: CelulaDia|undefined) =>
+              // Conteudo da celula: l1 = tipo/entrada, l2 = saida
+              const compactLbl = (cell: CelulaDia|undefined): { l1: string; l2: string } => {
+                if (!cell) return { l1: '', l2: '' }
+                if (cell.tipo === 'trabalho')    return { l1: cell.entrada || 'T', l2: cell.saida || '' }
+                if (cell.tipo === 'folga')       return { l1: 'F', l2: '' }
+                if (cell.tipo === 'ferias')      return { l1: 'V', l2: '' }
+                if (cell.tipo === 'baixa')       return { l1: 'B', l2: '' }
+                if (cell.tipo === 'gozar-horas') return { l1: 'G', l2: cell.entrada || '' }
+                if (cell.tipo === 'outro-local') return { l1: 'OL', l2: cell.entrada || '' }
+                return { l1: '', l2: '' }
+              }
+              const cellTxtColor = (cell?: CelulaDia) =>
                 cell?.tipo==='folga'?'#92400e':cell?.tipo==='ferias'?'#166534':cell?.tipo==='baixa'?'#9a3412':cell?.tipo==='gozar-horas'?'#075985':cell?.tipo==='outro-local'?'#5b21b6':theme.text
 
+              const cellTitle = (cell: CelulaDia|undefined, day: number): string => {
+                if (!cell) return `Dia ${day} — clique para preencher`
+                const base = TIPO_DIA_LABELS[cell.tipo]
+                return cell.entrada && cell.saida ? `${base} · ${cell.entrada}–${cell.saida}` : base
+              }
+
+              const DOW_CHAR = ['S','T','Q','Q','S','S','D']
               const navBtn: React.CSSProperties = { width:'32px', height:'32px', background:theme.card, border:'1px solid '+theme.border, borderRadius:'8px', color:theme.text, fontSize:'16px', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }
-              const thWk: React.CSSProperties = { padding:'5px 3px', textAlign:'center', fontSize:'11px', fontWeight:700, background:theme.bg, border:'1px solid '+theme.border }
-              const tdCell: React.CSSProperties = { textAlign:'center', fontSize:'10px', border:'1px solid '+theme.border, cursor:'pointer', height:'44px', verticalAlign:'middle', padding:'2px 1px' }
-              const tdName: React.CSSProperties = { padding:'6px 10px', fontSize:'12px', fontWeight:600, color:theme.text, border:'1px solid '+theme.border, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', width:'130px', maxWidth:'130px' }
 
               return (
                 <div style={{ flex:1, display:'flex', flexDirection:'column' }}>
@@ -1686,79 +1673,93 @@ export default function App() {
                   {ativos.length===0
                     ? <div style={{ ...T.card2, padding:'3rem', textAlign:'center' }}><p style={{ fontSize:'40px' }}>📅</p><p style={{ color:theme.textMuted }}>Sem colaboradores ativos.</p></div>
                     : (
+                      /* table-layout:fixed + width:100% → encaixa sempre sem overflow horizontal */
                       <div style={{ overflowY:'auto', flex:1 }}>
-                        {/* Uma tabela por semana, 9 colunas fixas (Nome + Seg-Dom + H/S) */}
-                        {weeks.map(week => {
-                          // Array de 7 posições (índice 0=Seg..6=Dom), null onde não há dia do mês
-                          const padded: (DayInfo|null)[] = Array(7).fill(null)
-                          week.days.forEach(d => { padded[d.dow - 1] = d })
-
-                          return (
-                            <table key={week.weekNum} style={{ width:'100%', borderCollapse:'collapse', tableLayout:'fixed', marginBottom:'6px' }}>
-                              <colgroup>
-                                <col style={{ width:'130px' }}/>
-                                <col/><col/><col/><col/><col/><col/><col/>
-                                <col style={{ width:'58px' }}/>
-                              </colgroup>
-                              <thead>
-                                <tr>
-                                  {/* Cabeçalho: label semana + dia/dia-da-semana por coluna */}
-                                  <th style={{ ...thWk, textAlign:'left', paddingLeft:'10px', fontSize:'12px', color:theme.text, fontWeight:700 }}>
-                                    Sem. {week.weekNum}
-                                  </th>
-                                  {padded.map((d, i) => (
-                                    <th key={i} style={{ ...thWk, color: d?.isWeekend ? '#94a3b8' : theme.text, background: d?.isWeekend ? theme.bg : theme.bg }}>
-                                      {d ? (<>
-                                        <div style={{ fontSize:'9px', fontWeight:400, color:theme.textMuted }}>{DOW_ABBR[d.dow]}</div>
-                                        <div style={{ fontSize:'14px', fontWeight:700 }}>{d.day}</div>
-                                      </>) : <span style={{ color:theme.border }}>—</span>}
-                                    </th>
-                                  ))}
-                                  <th style={{ ...thWk, background:'#dbeafe', color:'#1d4ed8' }}>H/S</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {ativos.map(colab => {
-                                  const colabDays = horarioData[selectedCompany.email]?.[horarioYearMonth]?.[colab.id] ?? {}
-                                  const weekTotal = calcWeeklyTotal(colabDays, week.startDay, week.endDay)
-                                  return (
-                                    <tr key={colab.id}>
-                                      <td style={tdName} title={colab.nome}>{colab.nome}</td>
-                                      {padded.map((d, i) => {
-                                        if (!d) return <td key={i} style={{ ...tdCell, background:theme.bg, cursor:'default' }}/>
-                                        const cell = colabDays[String(d.day)]
-                                        const bg = cellBgColor(cell, d.isWeekend, theme.card, theme.bg)
-                                        const l1 = cellLabel(cell)
-                                        const l2 = cellLabel2(cell)
-                                        return (
-                                          <td key={i} onClick={()=>openCellEdit(colab.id, d.day)} style={{ ...tdCell, background:bg }}>
-                                            {l1&&<div style={{ fontSize:'10px', fontWeight:600, color:cellTxtColor(cell), lineHeight:1.2 }}>{l1}</div>}
-                                            {l2&&<div style={{ fontSize:'9px', color:theme.textMuted, lineHeight:1.2 }}>{l2}</div>}
-                                          </td>
-                                        )
-                                      })}
-                                      <td style={{ ...tdCell, background:'#dbeafe', fontWeight:700, fontSize:'11px', color:'#1d4ed8', cursor:'default' }}>
-                                        {weekTotal>0?formatHoras(weekTotal):'—'}
+                        <table style={{ width:'100%', tableLayout:'fixed', borderCollapse:'collapse' }}>
+                          <colgroup>
+                            <col style={{ width:'13%' }}/>
+                            {days.map(d => <col key={d.day}/>)}
+                            <col style={{ width:'46px' }}/>
+                          </colgroup>
+                          <thead>
+                            <tr style={{ background:theme.bg }}>
+                              <th style={{ padding:'6px 8px', textAlign:'left', fontSize:'11px', fontWeight:700, color:theme.textMuted, border:'1px solid '+theme.border }}>
+                                Colaborador
+                              </th>
+                              {days.map(d => (
+                                <th key={d.day} style={{
+                                  padding:'3px 1px', textAlign:'center', fontSize:'10px', fontWeight:700,
+                                  color: d.isWeekend ? '#94a3b8' : theme.text,
+                                  background: theme.bg,
+                                  border:'1px solid '+theme.border,
+                                  borderRight: d.isLastOfWeek ? '2px solid '+theme.border : '1px solid '+theme.border,
+                                  userSelect:'none' as const
+                                }}>
+                                  <div style={{ fontSize:'8px', fontWeight:400, color:theme.textMuted, lineHeight:1.2 }}>{DOW_CHAR[d.dow-1]}</div>
+                                  <div style={{ lineHeight:1.3 }}>{d.day}</div>
+                                </th>
+                              ))}
+                              <th style={{ padding:'3px 2px', textAlign:'center', fontSize:'10px', fontWeight:700, background:'#dbeafe', color:'#1d4ed8', border:'1px solid '+theme.border }}>
+                                Total
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {ativos.map((colab, ri) => {
+                              const colabDays = horarioData[selectedCompany.email]?.[horarioYearMonth]?.[colab.id] ?? {}
+                              const monthTotal = Object.values(colabDays).reduce((s, c) => s + calcMinutosTrabalhados(c), 0)
+                              const rowBg = ri % 2 === 1 ? (theme.card === '#ffffff' ? '#fafafa' : theme.bg) : theme.card
+                              return (
+                                <tr key={colab.id}>
+                                  <td title={colab.nome} style={{
+                                    padding:'5px 8px', fontSize:'11px', fontWeight:600, color:theme.text,
+                                    border:'1px solid '+theme.border, background:rowBg,
+                                    whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis'
+                                  }}>{colab.nome}</td>
+                                  {days.map(d => {
+                                    const cell = colabDays[String(d.day)]
+                                    const bg = cellBgColor(cell, d.isWeekend, rowBg, theme.bg)
+                                    const { l1, l2 } = compactLbl(cell)
+                                    return (
+                                      <td key={d.day}
+                                        onClick={()=>openCellEdit(colab.id, d.day)}
+                                        title={cellTitle(cell, d.day)}
+                                        style={{
+                                          background:bg, textAlign:'center',
+                                          border:'1px solid '+theme.border,
+                                          borderRight: d.isLastOfWeek ? '2px solid '+theme.border : '1px solid '+theme.border,
+                                          cursor:'pointer', height:'42px', verticalAlign:'middle', padding:'1px'
+                                        }}>
+                                        {l1&&<div style={{ fontSize:'8px', fontWeight:700, color:cellTxtColor(cell), lineHeight:1.15 }}>{l1}</div>}
+                                        {l2&&<div style={{ fontSize:'8px', color:theme.textMuted, lineHeight:1.15 }}>{l2}</div>}
                                       </td>
-                                    </tr>
-                                  )
-                                })}
-                              </tbody>
-                            </table>
-                          )
-                        })}
+                                    )
+                                  })}
+                                  <td style={{
+                                    textAlign:'center', fontSize:'10px', fontWeight:700,
+                                    background:'#dbeafe', color:'#1d4ed8',
+                                    border:'1px solid '+theme.border, cursor:'default'
+                                  }}>
+                                    {monthTotal>0?formatHoras(monthTotal):'—'}
+                                  </td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
                       </div>
                     )
                   }
 
                   {/* Legenda */}
-                  <div style={{ display:'flex', gap:'12px', flexWrap:'wrap', marginTop:'12px', fontSize:'11px', color:theme.textMuted }}>
-                    {([['#fef9c3','Folga (F)'],['#dcfce7','Férias'],['#fed7aa','Baixa (B)'],['#e0f2fe','Gozar Horas (G)'],['#ede9fe','Outro Local (OL)']] as [string,string][]).map(([bg,lbl])=>(
+                  <div style={{ display:'flex', gap:'14px', flexWrap:'wrap', marginTop:'10px', fontSize:'11px', color:theme.textMuted, alignItems:'center' }}>
+                    {([['#fef9c3','Folga (F)'],['#dcfce7','Férias (V)'],['#fed7aa','Baixa (B)'],['#e0f2fe','Gozar Horas (G)'],['#ede9fe','Outro Local (OL)']] as [string,string][]).map(([bg,lbl])=>(
                       <div key={lbl} style={{ display:'flex', alignItems:'center', gap:'5px' }}>
                         <div style={{ width:'14px', height:'14px', borderRadius:'3px', background:bg, border:'1px solid #e2e8f0', flexShrink:0 }}/>
                         <span>{lbl}</span>
                       </div>
                     ))}
+                    <span style={{ marginLeft:'4px' }}>· Linha dupla = fim de semana</span>
                   </div>
 
                   {/* Modal edição de célula */}
