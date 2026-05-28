@@ -44,7 +44,6 @@ type MovimentoTipo = 'auto' | 'manual'
 interface MovimentoBH { id: string; data: string; tipo: MovimentoTipo; horas: number; motivo: string }
 type BancoHorasMovimentos = Record<string, Record<string, MovimentoBH[]>>
 interface EditCelulaState { colabId: string; day: number; yearMonth: string }
-interface FeriadoMunicipal { id: string; nome: string; data: string }  // data = "MM-DD"
 interface TurnoTemplate { id: string; nome: string; entrada: string; saida: string }
 type WizardTipo = 'uteis' | 'fds' | 'feriados'
 interface WizardTurnos { uteis: TurnoTemplate[]; fds: TurnoTemplate[]; feriados: TurnoTemplate[] }
@@ -108,11 +107,28 @@ const TIPO_DIA_LABELS: Record<TipoDia, string> = {
   'trabalho':'Trabalho', 'folga':'Folga', 'ferias':'Férias',
   'baixa':'Baixa Médica', 'gozar-horas':'Gozar Horas', 'outro-local':'Outro Estabelecimento',
 }
+const TURNO_COLORS = ['#dbeafe','#dcfce7','#fef9c3','#ede9fe','#ffe4e6']
 
-const FERIADOS_NACIONAIS_PT = new Set(['01-01','04-25','05-01','06-10','08-15','10-05','11-01','12-01','12-08','12-25'])
-function isFeriadoPT(month: number, day: number, municipais: FeriadoMunicipal[]): boolean {
+const FERIADOS_NACIONAIS_PT_LISTA: { data: string; nome: string }[] = [
+  { data:'01-01', nome:'Ano Novo' },
+  { data:'04-25', nome:'Dia da Liberdade' },
+  { data:'05-01', nome:'Dia do Trabalhador' },
+  { data:'06-10', nome:'Dia de Portugal, Camões e das Comunidades' },
+  { data:'08-15', nome:'Assunção de Nossa Senhora' },
+  { data:'10-05', nome:'Implantação da República' },
+  { data:'11-01', nome:'Dia de Todos os Santos' },
+  { data:'12-01', nome:'Restauração da Independência' },
+  { data:'12-08', nome:'Imaculada Conceição' },
+  { data:'12-25', nome:'Natal' },
+]
+const FERIADOS_NACIONAIS_PT = new Set(FERIADOS_NACIONAIS_PT_LISTA.map(f => f.data))
+function isFeriadoPT(month: number, day: number): boolean {
   const key = `${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`
-  return FERIADOS_NACIONAIS_PT.has(key) || municipais.some(f => f.data === key)
+  return FERIADOS_NACIONAIS_PT.has(key)
+}
+function nomeFeriadoPT(month: number, day: number): string {
+  const key = `${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`
+  return FERIADOS_NACIONAIS_PT_LISTA.find(f => f.data === key)?.nome ?? ''
 }
 function getMonthWeekIdx(year: number, month: number, day: number): number {
   const firstDow = dayOfWeek(year, month, 1) - 1
@@ -460,10 +476,16 @@ export default function App() {
 
   // -- Geracao automatica de horarios
   const [showGerarModal, setShowGerarModal] = useState(false)
-  // -- Feriados municipais
-  const [feriadosMunicipais, setFeriadosMunicipais] = useState<Record<string, FeriadoMunicipal[]>>({})
-  const [novoFeriadoNome, setNovoFeriadoNome] = useState('')
-  const [novoFeriadoData, setNovoFeriadoData] = useState('')
+  // -- Turnos Padrão (por empresa, persistentes)
+  const [turnosPadrao, setTurnosPadrao] = useState<Record<string, WizardTurnos>>({})
+  const [addTPTipo, setAddTPTipo] = useState<WizardTipo|null>(null)
+  const [addTPNome, setAddTPNome] = useState('')
+  const [addTPEntrada, setAddTPEntrada] = useState('')
+  const [addTPSaida, setAddTPSaida] = useState('')
+  const [editTPKey, setEditTPKey] = useState<{tipo:WizardTipo;id:string}|null>(null)
+  const [editTPNome, setEditTPNome] = useState('')
+  const [editTPEntrada, setEditTPEntrada] = useState('')
+  const [editTPSaida, setEditTPSaida] = useState('')
   // -- Wizard gerar horário (5 passos)
   const [wizardStep, setWizardStep] = useState(1)
   const [wizardTipos, setWizardTipos] = useState<WizardTipo[]>(['uteis','fds','feriados'])
@@ -471,7 +493,6 @@ export default function App() {
   const [wizardAtrib, setWizardAtrib] = useState<Record<string,Record<string,string>>>({})
   const [wizardFolgas, setWizardFolgas] = useState(2)
   const [wizardRotacao, setWizardRotacao] = useState(true)
-  const [savedTurnos, setSavedTurnos] = useState<WizardTurnos>({ uteis:[], fds:[], feriados:[] })
 
   // ── Empresa editing
   const [eNome, setENome] = useState('')
@@ -789,9 +810,12 @@ export default function App() {
 
   // Abre o wizard de gerar horário (5 passos)
   function abrirWizardGerar() {
-    const initTurnos: WizardTurnos = savedTurnos.uteis.length > 0 || savedTurnos.fds.length > 0 || savedTurnos.feriados.length > 0
-      ? { uteis:[...savedTurnos.uteis], fds:[...savedTurnos.fds], feriados:[...savedTurnos.feriados] }
-      : { uteis:[], fds:[], feriados:[] }
+    const padrao = turnosPadrao[selectedCompany.email] ?? { uteis:[], fds:[], feriados:[] }
+    const initTurnos: WizardTurnos = {
+      uteis: padrao.uteis.map(t=>({...t})),
+      fds: padrao.fds.map(t=>({...t})),
+      feriados: padrao.feriados.map(t=>({...t})),
+    }
     setWizardTurnos(initTurnos)
     setWizardStep(1)
     setWizardTipos(['uteis','fds','feriados'])
@@ -811,7 +835,6 @@ export default function App() {
   function gerarHorarioAutomatico() {
     const { year, month } = parseYearMonth(horarioYearMonth)
     const total = daysInMonth(year, month)
-    const municipais = feriadosMunicipais[selectedCompany.email] ?? []
     const newColabData: Record<string, Record<string, CelulaDia>> = {}
 
     // Mapa rápido turnoId → TurnoTemplate
@@ -861,7 +884,7 @@ export default function App() {
       for (let day = 1; day <= total; day++) {
         if (folgaDays.has(day)) { dias[String(day)] = { tipo:'folga' }; continue }
         const dow = dayOfWeek(year, month, day)
-        const ehFeriado = isFeriadoPT(month, day, municipais)
+        const ehFeriado = isFeriadoPT(month, day)
         let tipoDia: WizardTipo | null = null
         if (ehFeriado && wizardTipos.includes('feriados')) tipoDia = 'feriados'
         else if (dow >= 6 && wizardTipos.includes('fds')) tipoDia = 'fds'
@@ -879,7 +902,6 @@ export default function App() {
       ...prev,
       [selectedCompany.email]: { ...(prev[selectedCompany.email] ?? {}), [horarioYearMonth]: newColabData }
     }))
-    setSavedTurnos({ ...wizardTurnos })
     setShowGerarModal(false)
   }
 
@@ -1746,41 +1768,93 @@ export default function App() {
                   </button>
                 </div>
 
-                {/* Feriados Municipais */}
+                {/* Turnos Padrão */}
                 <div style={{ ...T.card2, padding:'1.5rem', marginTop:'1.5rem' }}>
-                  <h3 style={{ ...T.title, fontSize:'16px', marginBottom:'1rem' }}>Feriados Municipais</h3>
-                  {(feriadosMunicipais[selectedCompany.email] ?? []).length === 0
-                    ? <p style={{ fontSize:'13px', color:theme.textMuted, marginBottom:'1rem' }}>Nenhum feriado municipal configurado.</p>
-                    : (
-                      <div style={{ marginBottom:'1rem' }}>
-                        {(feriadosMunicipais[selectedCompany.email] ?? []).map(f => (
-                          <div key={f.id} style={{ display:'flex', alignItems:'center', gap:'10px', padding:'7px 0', borderBottom:'1px solid '+theme.border }}>
-                            <span style={{ fontSize:'13px', color:theme.text, flex:1 }}>{f.nome}</span>
-                            <span style={{ fontSize:'12px', color:theme.textMuted, fontVariantNumeric:'tabular-nums' }}>{f.data}</span>
-                            <button onClick={()=>setFeriadosMunicipais(prev => {
-                              const cur = prev[selectedCompany.email] ?? []
-                              return { ...prev, [selectedCompany.email]: cur.filter(x => x.id !== f.id) }
-                            })} style={{ height:'26px', padding:'0 10px', background:'#fef2f2', color:'#b91c1c', border:'1px solid #fecaca', borderRadius:'6px', fontSize:'12px', cursor:'pointer' }}>Remover</button>
+                  <h3 style={{ ...T.title, fontSize:'16px', marginBottom:'0.375rem' }}>Turnos Padrão</h3>
+                  <p style={{ fontSize:'13px', color:theme.textMuted, marginBottom:'1.25rem' }}>Configure os turnos reutilizáveis no assistente de geração de horários.</p>
+                  {(['uteis','fds','feriados'] as WizardTipo[]).map(tipo => {
+                    const tpLabel: Record<WizardTipo,string> = { uteis:'Dias Úteis', fds:'Fins de Semana', feriados:'Feriados' }
+                    const turnos = turnosPadrao[selectedCompany.email]?.[tipo] ?? []
+                    const isAdding = addTPTipo === tipo
+                    return (
+                      <div key={tipo} style={{ marginBottom:'1.5rem' }}>
+                        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'8px' }}>
+                          <p style={{ ...T.sectionLbl, margin:0 }}>{tpLabel[tipo]}</p>
+                          {!isAdding && (
+                            <button onClick={()=>{ setAddTPTipo(tipo); setAddTPNome(''); setAddTPEntrada(''); setAddTPSaida('') }}
+                              style={{ height:'28px', padding:'0 12px', background:'none', border:'1px dashed '+theme.border, borderRadius:'6px', fontSize:'12px', color:theme.textMuted, cursor:'pointer' }}>
+                              + Adicionar turno
+                            </button>
+                          )}
+                        </div>
+                        {turnos.length===0 && !isAdding && (
+                          <p style={{ fontSize:'12px', color:theme.textMuted, fontStyle:'italic', marginBottom:'6px' }}>Sem turnos configurados.</p>
+                        )}
+                        {turnos.map((t, ti) => {
+                          const color = TURNO_COLORS[ti % TURNO_COLORS.length]
+                          const isEditing = editTPKey?.tipo===tipo && editTPKey?.id===t.id
+                          if (isEditing) return (
+                            <div key={t.id} style={{ display:'grid', gridTemplateColumns: isMobile?'1fr':'1fr 110px 110px auto', gap:'8px', alignItems:'flex-end', marginBottom:'8px', padding:'10px', background:color, borderRadius:'8px', flexWrap:'wrap' as const }}>
+                              <input style={T.input} placeholder="Nome" value={editTPNome} onChange={e=>setEditTPNome(e.target.value)}/>
+                              <input style={T.input} type="time" value={editTPEntrada} onChange={e=>setEditTPEntrada(e.target.value)}/>
+                              <input style={T.input} type="time" value={editTPSaida} onChange={e=>setEditTPSaida(e.target.value)}/>
+                              <div style={{ display:'flex', gap:'4px' }}>
+                                <button onClick={()=>{
+                                  setTurnosPadrao(prev => {
+                                    const cur = prev[selectedCompany.email] ?? { uteis:[], fds:[], feriados:[] }
+                                    return { ...prev, [selectedCompany.email]: { ...cur, [tipo]: cur[tipo].map(x=>x.id===t.id?{...x,nome:editTPNome,entrada:editTPEntrada,saida:editTPSaida}:x) } }
+                                  })
+                                  setEditTPKey(null)
+                                }} style={{ height:'36px', padding:'0 12px', background:theme.btn, color:theme.btnText, border:'none', borderRadius:'6px', fontSize:'13px', fontWeight:700, cursor:'pointer' }}>✓ Guardar</button>
+                                <button onClick={()=>setEditTPKey(null)} style={{ height:'36px', padding:'0 10px', background:theme.bg, border:'1px solid '+theme.border, borderRadius:'6px', fontSize:'12px', cursor:'pointer' }}>Cancelar</button>
+                              </div>
+                            </div>
+                          )
+                          return (
+                            <div key={t.id} style={{ display:'flex', alignItems:'center', gap:'8px', padding:'8px 12px', borderRadius:'8px', background:color, marginBottom:'6px' }}>
+                              <span style={{ flex:1, fontSize:'13px', fontWeight:700, color:theme.text }}>{t.nome||'(sem nome)'}</span>
+                              <span style={{ fontSize:'12px', color:theme.textMuted, fontVariantNumeric:'tabular-nums' }}>{t.entrada} – {t.saida}</span>
+                              <button onClick={()=>{ setEditTPKey({tipo,id:t.id}); setEditTPNome(t.nome); setEditTPEntrada(t.entrada); setEditTPSaida(t.saida) }} style={{ height:'26px', padding:'0 8px', background:'rgba(255,255,255,0.65)', border:'1px solid rgba(0,0,0,0.1)', borderRadius:'5px', fontSize:'12px', cursor:'pointer', color:theme.text }}>Editar</button>
+                              <button onClick={()=>setTurnosPadrao(prev => {
+                                const cur = prev[selectedCompany.email] ?? { uteis:[], fds:[], feriados:[] }
+                                return { ...prev, [selectedCompany.email]: { ...cur, [tipo]: cur[tipo].filter(x=>x.id!==t.id) } }
+                              })} style={{ height:'26px', padding:'0 8px', background:'#fef2f2', color:'#b91c1c', border:'1px solid #fecaca', borderRadius:'5px', fontSize:'12px', cursor:'pointer' }}>Remover</button>
+                            </div>
+                          )
+                        })}
+                        {isAdding && (
+                          <div style={{ padding:'12px', background:theme.bg, borderRadius:'8px', border:'1px dashed '+theme.border, marginTop:'6px' }}>
+                            <div style={{ display:'grid', gridTemplateColumns: isMobile?'1fr':'1fr 110px 110px', gap:'8px', marginBottom:'8px' }}>
+                              <div>
+                                <label style={T.label}>Nome do turno</label>
+                                <input style={T.input} placeholder={tipo==='uteis'?'Ex: Turno Manhã':'Ex: Turno FdS'} value={addTPNome} onChange={e=>setAddTPNome(e.target.value)}/>
+                              </div>
+                              <div>
+                                <label style={T.label}>Entrada</label>
+                                <input style={T.input} type="time" value={addTPEntrada} onChange={e=>setAddTPEntrada(e.target.value)}/>
+                              </div>
+                              <div>
+                                <label style={T.label}>Saída</label>
+                                <input style={T.input} type="time" value={addTPSaida} onChange={e=>setAddTPSaida(e.target.value)}/>
+                              </div>
+                            </div>
+                            <div style={{ display:'flex', gap:'8px' }}>
+                              <button onClick={()=>{
+                                if (!addTPNome.trim() || !addTPEntrada || !addTPSaida) return
+                                const novo: TurnoTemplate = { id:`${tipo}-${Date.now()}`, nome:addTPNome.trim(), entrada:addTPEntrada, saida:addTPSaida }
+                                setTurnosPadrao(prev => {
+                                  const cur = prev[selectedCompany.email] ?? { uteis:[], fds:[], feriados:[] }
+                                  return { ...prev, [selectedCompany.email]: { ...cur, [tipo]: [...cur[tipo], novo] } }
+                                })
+                                setAddTPTipo(null)
+                              }} style={{ height:'34px', padding:'0 16px', background:theme.btn, color:theme.btnText, border:'none', borderRadius:'7px', fontSize:'13px', fontWeight:700, cursor:'pointer' }}>Guardar</button>
+                              <button onClick={()=>setAddTPTipo(null)} style={{ height:'34px', padding:'0 12px', background:theme.bg, border:'1px solid '+theme.border, borderRadius:'7px', fontSize:'12px', cursor:'pointer' }}>Cancelar</button>
+                            </div>
                           </div>
-                        ))}
+                        )}
                       </div>
                     )
-                  }
-                  <p style={{ ...T.sectionLbl, marginBottom:'8px' }}>Adicionar feriado</p>
-                  <div style={{ display:'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr auto auto', gap:'8px', alignItems:'flex-end' }}>
-                    <div><label style={T.label}>Nome do feriado</label><input style={T.input} type="text" placeholder="Ex: Dia da Cidade" value={novoFeriadoNome} onChange={e=>setNovoFeriadoNome(e.target.value)}/></div>
-                    <div><label style={T.label}>Data (MM-DD)</label><input style={T.input} type="text" placeholder="06-13" maxLength={5} value={novoFeriadoData} onChange={e=>setNovoFeriadoData(e.target.value)}/></div>
-                    <button onClick={()=>{
-                      const nome = novoFeriadoNome.trim()
-                      const data = novoFeriadoData.trim()
-                      if (!nome || !/^\d{2}-\d{2}$/.test(data)) return
-                      const novo: FeriadoMunicipal = { id: Date.now().toString(), nome, data }
-                      setFeriadosMunicipais(prev => ({ ...prev, [selectedCompany.email]: [...(prev[selectedCompany.email] ?? []), novo] }))
-                      setNovoFeriadoNome(''); setNovoFeriadoData('')
-                    }} style={{ height:'36px', padding:'0 16px', background:theme.btn, color:theme.btnText, border:'none', borderRadius:'8px', fontSize:'13px', fontWeight:700, cursor:'pointer', whiteSpace:'nowrap' as const }}>
-                      + Adicionar
-                    </button>
-                  </div>
+                  })}
                 </div>
               </div>
             )}
@@ -1792,13 +1866,12 @@ export default function App() {
               const isPastMonth = horarioYearMonth < nowYM
               const totalDias = daysInMonth(year, month)
 
-              const municipais = feriadosMunicipais[selectedCompany.email] ?? []
-
               // Um array por dia do mês com metadados
               const days = Array.from({ length: totalDias }, (_, i) => {
                 const day = i + 1
                 const dow = dayOfWeek(year, month, day)
-                return { day, dow, isWeekend: dow >= 6, isLastOfWeek: dow === 7 || day === totalDias, isFeriado: isFeriadoPT(month, day, municipais) }
+                const isFeriado = isFeriadoPT(month, day)
+                return { day, dow, isWeekend: dow >= 6, isLastOfWeek: dow === 7 || day === totalDias, isFeriado, feriadoNome: isFeriado ? nomeFeriadoPT(month, day) : '' }
               })
 
               // Conteudo da celula: l1 = tipo/entrada, l2 = saida
@@ -1827,29 +1900,33 @@ export default function App() {
               return (
                 <div style={{ flex:1, display:'flex', flexDirection:'column' }}>
                   {/* Barra de navegação */}
-                  <div style={{ display:'flex', alignItems:'center', gap:'10px', marginBottom:'1rem', flexWrap:'wrap' }}>
-                    <button onClick={prevMonth} style={navBtn}>‹</button>
-                    <span style={{ fontWeight:700, fontSize:'16px', color:theme.text, minWidth:'160px', textAlign:'center' }}>{MONTH_NAMES[month-1]} {year}</span>
-                    <button onClick={nextMonth} style={navBtn}>›</button>
+                  <div style={{ display:'flex', alignItems:'center', marginBottom:'1rem' }}>
                     <div style={{ flex:1 }}/>
-                    <button onClick={abrirWizardGerar} style={{ ...btnMd('#d1fae5','#065f46') }}>⚡ Gerar Horário</button>
-                    <button onClick={exportarPDF} style={{ ...btnMd(theme.btn, theme.btnText) }}>📄 Exportar PDF</button>
+                    <div style={{ display:'flex', alignItems:'center', gap:'8px' }}>
+                      <button onClick={prevMonth} style={navBtn}>‹</button>
+                      <span style={{ fontWeight:700, fontSize:'16px', color:theme.text, minWidth:'160px', textAlign:'center' }}>{MONTH_NAMES[month-1]} {year}</span>
+                      <button onClick={nextMonth} style={navBtn}>›</button>
+                    </div>
+                    <div style={{ flex:1, display:'flex', justifyContent:'flex-end', gap:'8px' }}>
+                      <button onClick={abrirWizardGerar} style={{ ...btnMd('#d1fae5','#065f46') }}>⚡ Gerar Horário</button>
+                      <button onClick={exportarPDF} style={{ ...btnMd(theme.btn, theme.btnText) }}>📄 Exportar PDF</button>
+                    </div>
                   </div>
                   {isPastMonth&&<div style={{ ...s.alertInfo, marginBottom:'1rem' }}>A visualizar mês passado. Os dados podem ser editados mas foram já processados.</div>}
 
                   {/* ── Wizard de 5 passos: Gerar Horário Automático ── */}
                   {showGerarModal&&(()=>{
                     const wTipoLabel: Record<string,string> = { uteis:'Dias úteis', fds:'Fins de semana', feriados:'Feriados' }
-                    const wTipoSub: Record<string,string> = { uteis:'2ª a 6ª feira', fds:'Sábado e Domingo', feriados:'Nacionais e municipais' }
-                    const TURNO_COLORS = ['#dbeafe','#dcfce7','#fef9c3','#ede9fe','#ffe4e6']
+                    const wTipoSub: Record<string,string> = { uteis:'2ª a 6ª feira', fds:'Sábado e Domingo', feriados:'Feriados nacionais de Portugal' }
                     const totalDiasPreview = daysInMonth(year, month)
 
                     const validarPasso = (step: number): string|null => {
                       if (step===1 && wizardTipos.length===0) return 'Selecione pelo menos um tipo de dia.'
                       if (step===2) {
+                        if (wizardTipos.every(tipo=>(wizardTurnos[tipo]??[]).length===0))
+                          return 'Sem turnos padrão configurados. Aceda a Dados da Empresa → Turnos Padrão.'
                         for (const tipo of wizardTipos) {
-                          if ((wizardTurnos[tipo]??[]).length===0) return `Adicione pelo menos 1 turno para "${wTipoLabel[tipo]}".`
-                          for (const t of wizardTurnos[tipo]) {
+                          for (const t of (wizardTurnos[tipo]??[])) {
                             if (!t.entrada||!t.saida) return `Preencha a entrada e saída de todos os turnos de "${wTipoLabel[tipo]}".`
                           }
                         }
@@ -1898,60 +1975,90 @@ export default function App() {
                               </div>
                             )}
 
-                            {/* ─ PASSO 2: Definir turnos ─ */}
-                            {wizardStep===2&&(
-                              <div>
-                                {wizardTipos.map(tipo=>(
-                                  <div key={tipo} style={{ marginBottom:'1.75rem' }}>
-                                    <p style={{ ...T.sectionLbl, marginBottom:'10px' }}>{wTipoLabel[tipo]}</p>
-                                    {(wizardTurnos[tipo]??[]).map((t,ti)=>(
-                                      <div key={t.id} style={{ display:'grid', gridTemplateColumns:'1fr 110px 110px 38px', gap:'8px', alignItems:'flex-end', marginBottom:'8px' }}>
-                                        <div>
-                                          {ti===0&&<label style={T.label}>Nome do turno</label>}
-                                          <input style={T.input} placeholder={tipo==='uteis'?'Ex: Turno Manhã':'Ex: Turno FdS'} value={t.nome} onChange={e=>setWizardTurnos(p=>({...p,[tipo]:p[tipo].map((x,i)=>i===ti?{...x,nome:e.target.value}:x)}))}/>
-                                        </div>
-                                        <div>
-                                          {ti===0&&<label style={T.label}>Entrada</label>}
-                                          <input style={T.input} type="time" value={t.entrada} onChange={e=>setWizardTurnos(p=>({...p,[tipo]:p[tipo].map((x,i)=>i===ti?{...x,entrada:e.target.value}:x)}))}/>
-                                        </div>
-                                        <div>
-                                          {ti===0&&<label style={T.label}>Saída</label>}
-                                          <input style={T.input} type="time" value={t.saida} onChange={e=>setWizardTurnos(p=>({...p,[tipo]:p[tipo].map((x,i)=>i===ti?{...x,saida:e.target.value}:x)}))}/>
-                                        </div>
-                                        <button onClick={()=>setWizardTurnos(p=>({...p,[tipo]:p[tipo].filter((_,i)=>i!==ti)}))} style={{ height:'36px', background:'#fef2f2', color:'#b91c1c', border:'1px solid #fecaca', borderRadius:'6px', fontSize:'14px', cursor:'pointer', alignSelf:'flex-end' }}>✕</button>
-                                      </div>
-                                    ))}
-                                    <button onClick={()=>setWizardTurnos(p=>({...p,[tipo]:[...p[tipo],{id:`${tipo}-${Date.now()}`,nome:'',entrada:'',saida:''}]}))} style={{ height:'32px', padding:'0 12px', background:'none', border:'1px dashed '+theme.border, borderRadius:'6px', fontSize:'12px', color:theme.textMuted, cursor:'pointer' }}>+ Adicionar turno</button>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
+                            {/* ─ PASSO 2: Turnos Padrão (ajuste de horários) ─ */}
+                            {wizardStep===2&&(()=>{
+                              const semTurnos = wizardTipos.every(tipo=>(wizardTurnos[tipo]??[]).length===0)
+                              if (semTurnos) return (
+                                <div style={{ ...s.alertInfo }}>
+                                  <p style={{ fontWeight:700, marginBottom:'6px' }}>Sem turnos padrão configurados.</p>
+                                  <p style={{ fontSize:'13px' }}>Aceda a <strong>Dados da Empresa → Turnos Padrão</strong> para criar os turnos antes de gerar o horário. Depois feche este assistente e abra-o novamente.</p>
+                                </div>
+                              )
+                              return (
+                                <div>
+                                  <p style={{ fontSize:'13px', color:theme.textMuted, marginBottom:'1.25rem' }}>Turnos carregados das configurações. Pode ajustar os horários para este mês — as alterações são temporárias e não afectam as configurações guardadas.</p>
+                                  {wizardTipos.map(tipo=>(
+                                    <div key={tipo} style={{ marginBottom:'1.5rem' }}>
+                                      <p style={{ ...T.sectionLbl, marginBottom:'10px' }}>{wTipoLabel[tipo]}</p>
+                                      {(wizardTurnos[tipo]??[]).length===0
+                                        ? <p style={{ fontSize:'12px', color:'#b45309', fontStyle:'italic', padding:'6px 10px', background:'#fffbeb', borderRadius:'6px', border:'1px solid #fde68a' }}>Sem turnos padrão para "{wTipoLabel[tipo]}". Configure em <strong>Dados da Empresa → Turnos Padrão</strong>.</p>
+                                        : (wizardTurnos[tipo]??[]).map((t,ti)=>(
+                                          <div key={t.id} style={{ display:'grid', gridTemplateColumns:'1fr 110px 110px', gap:'8px', alignItems:'flex-end', marginBottom:'8px', padding:'10px 12px', background:TURNO_COLORS[ti%TURNO_COLORS.length], borderRadius:'8px' }}>
+                                            <div>
+                                              {ti===0&&<label style={T.label}>Turno</label>}
+                                              <div style={{ height:'36px', padding:'0 10px', background:'rgba(255,255,255,0.6)', borderRadius:'6px', border:'1px solid rgba(0,0,0,0.08)', display:'flex', alignItems:'center', fontSize:'13px', fontWeight:700, color:theme.text }}>{t.nome}</div>
+                                            </div>
+                                            <div>
+                                              {ti===0&&<label style={T.label}>Entrada</label>}
+                                              <input style={T.input} type="time" value={t.entrada} onChange={e=>setWizardTurnos(p=>({...p,[tipo]:p[tipo].map((x,i)=>i===ti?{...x,entrada:e.target.value}:x)}))}/>
+                                            </div>
+                                            <div>
+                                              {ti===0&&<label style={T.label}>Saída</label>}
+                                              <input style={T.input} type="time" value={t.saida} onChange={e=>setWizardTurnos(p=>({...p,[tipo]:p[tipo].map((x,i)=>i===ti?{...x,saida:e.target.value}:x)}))}/>
+                                            </div>
+                                          </div>
+                                        ))
+                                      }
+                                    </div>
+                                  ))}
+                                </div>
+                              )
+                            })()}
 
-                            {/* ─ PASSO 3: Atribuir colaboradores ─ */}
+                            {/* ─ PASSO 3: Atribuir colaboradores (turno-centric) ─ */}
                             {wizardStep===3&&(
                               <div>
-                                <p style={{ fontSize:'13px', color:theme.textMuted, marginBottom:'1rem' }}>Para cada colaborador, selecione o turno atribuído em cada tipo de dia. Escolha "Folga" para dias de descanso fixos.</p>
-                                {ativos.map(colab=>(
-                                  <div key={colab.id} style={{ display:'flex', alignItems:'center', gap:'10px', padding:'10px 0', borderBottom:'1px solid '+theme.border, flexWrap:'wrap' }}>
-                                    <div style={{ width:'32px', height:'32px', borderRadius:'50%', background:theme.bg, display:'flex', alignItems:'center', justifyContent:'center', fontSize:'13px', fontWeight:700, color:theme.btn, flexShrink:0 }}>{colab.nome.charAt(0)}</div>
-                                    <span style={{ fontSize:'13px', fontWeight:600, color:theme.text, minWidth:'130px', flex:1 }}>{colab.nome}</span>
-                                    {wizardTipos.map(tipo=>{
-                                      const turnoId = wizardAtrib[colab.id]?.[tipo]??''
-                                      const turnoIdx = (wizardTurnos[tipo]??[]).findIndex(t=>t.id===turnoId)
-                                      const selBg = turnoId==='folga'?'#fef9c3':turnoIdx>=0?TURNO_COLORS[turnoIdx%TURNO_COLORS.length]:'transparent'
-                                      return (
-                                        <div key={tipo} style={{ display:'flex', flexDirection:'column', gap:'3px', minWidth:'140px' }}>
-                                          <label style={{ fontSize:'10px', fontWeight:700, color:theme.textMuted, textTransform:'uppercase', letterSpacing:'0.06em' }}>{wTipoLabel[tipo]}</label>
-                                          <select value={turnoId} onChange={e=>setWizardAtrib(p=>({...p,[colab.id]:{...(p[colab.id]??{}),[tipo]:e.target.value}}))} style={{ ...T.select, height:'34px', fontSize:'12px', background:selBg }}>
-                                            <option value="">— Sem turno —</option>
-                                            <option value="folga">🌙 Folga</option>
-                                            {(wizardTurnos[tipo]??[]).map((t,ti)=><option key={t.id} value={t.id} style={{ background:TURNO_COLORS[ti%TURNO_COLORS.length] }}>{t.nome||'(sem nome)'} · {t.entrada}–{t.saida}</option>)}
-                                          </select>
+                                <p style={{ fontSize:'13px', color:theme.textMuted, marginBottom:'1rem' }}>Clique num colaborador para o atribuir ao turno. Pode atribuir o mesmo colaborador a turnos diferentes por tipo de dia. Colaboradores sem turno ficam com <strong>Folga</strong>.</p>
+                                {wizardTipos.map(tipo=>{
+                                  const turnos = wizardTurnos[tipo]??[]
+                                  if (turnos.length===0) return null
+                                  const unassigned = ativos.filter(c=>{ const tid=wizardAtrib[c.id]?.[tipo]; return !tid||tid===''||tid==='folga' })
+                                  return (
+                                    <div key={tipo} style={{ marginBottom:'1.75rem' }}>
+                                      <p style={{ ...T.sectionLbl, marginBottom:'10px' }}>{wTipoLabel[tipo]}</p>
+                                      {turnos.map((t,ti)=>{
+                                        const color = TURNO_COLORS[ti%TURNO_COLORS.length]
+                                        const assignedColabs = ativos.filter(c=>wizardAtrib[c.id]?.[tipo]===t.id)
+                                        return (
+                                          <div key={t.id} style={{ marginBottom:'10px', borderRadius:'10px', border:'1px solid '+theme.border, overflow:'hidden' }}>
+                                            <div style={{ background:color, padding:'8px 12px', display:'flex', alignItems:'center', gap:'10px' }}>
+                                              <span style={{ fontSize:'13px', fontWeight:700, color:theme.text }}>{t.nome}</span>
+                                              <span style={{ fontSize:'12px', color:theme.textMuted }}>{t.entrada} – {t.saida}</span>
+                                              <span style={{ marginLeft:'auto', fontSize:'11px', background:'rgba(255,255,255,0.55)', padding:'2px 8px', borderRadius:'12px', color:theme.text }}>{assignedColabs.length} col.</span>
+                                            </div>
+                                            <div style={{ padding:'10px 12px', display:'flex', flexWrap:'wrap', gap:'6px', background:theme.card, minHeight:'44px' }}>
+                                              {ativos.map(colab=>{
+                                                const isAssigned = wizardAtrib[colab.id]?.[tipo]===t.id
+                                                return (
+                                                  <button key={colab.id} onClick={()=>setWizardAtrib(p=>({...p,[colab.id]:{...(p[colab.id]??{}),[tipo]:isAssigned?'folga':t.id}}))}
+                                                    style={{ height:'30px', padding:'0 12px', background:isAssigned?color:theme.bg, border:isAssigned?'2px solid rgba(0,0,0,0.18)':'1px solid '+theme.border, borderRadius:'15px', fontSize:'12px', fontWeight:isAssigned?700:400, color:theme.text, cursor:'pointer', transition:'all 0.12s' }}>
+                                                    {colab.nome.split(' ')[0]}{isAssigned?' ✓':''}
+                                                  </button>
+                                                )
+                                              })}
+                                            </div>
+                                          </div>
+                                        )
+                                      })}
+                                      {unassigned.length>0&&(
+                                        <div style={{ padding:'7px 12px', borderRadius:'8px', background:'#fef9c3', border:'1px solid #fde68a', fontSize:'12px', color:'#92400e' }}>
+                                          <span style={{ fontWeight:700 }}>Folga: </span>
+                                          {unassigned.map(c=>c.nome.split(' ')[0]).join(', ')}
                                         </div>
-                                      )
-                                    })}
-                                  </div>
-                                ))}
+                                      )}
+                                    </div>
+                                  )
+                                })}
                               </div>
                             )}
 
@@ -2088,7 +2195,7 @@ export default function App() {
                                   border:'1px solid '+theme.border,
                                   borderRight: d.isLastOfWeek ? '2px solid '+theme.border : '1px solid '+theme.border,
                                   userSelect:'none' as const
-                                }}>
+                                }} title={d.feriadoNome||undefined}>
                                   <div style={{ fontSize:'8px', fontWeight:400, color: d.isFeriado ? '#166534' : theme.textMuted, lineHeight:1.2 }}>{DOW_CHAR[d.dow-1]}</div>
                                   <div style={{ lineHeight:1.3 }}>{d.day}</div>
                                 </th>
@@ -2132,7 +2239,7 @@ export default function App() {
                                       }}>{colab.nome}</td>
                                       {days.map(d => {
                                         const cell = colabDays[String(d.day)]
-                                        const bg = cellBgColor(cell, d.isWeekend, rowBg, theme.bg)
+                                        const bg = d.isFeriado ? '#dcfce7' : cellBgColor(cell, d.isWeekend, rowBg, theme.bg)
                                         const { l1, l2 } = compactLbl(cell)
                                         return (
                                           <td key={d.day}
