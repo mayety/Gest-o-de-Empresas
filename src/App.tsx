@@ -473,6 +473,7 @@ export default function App() {
   const [bhAjusteHoras, setBhAjusteHoras] = useState('')
   const [bhAjusteMotivo, setBhAjusteMotivo] = useState('')
   const [bhAjusteErr, setBhAjusteErr] = useState('')
+  const [bhPdfRodape, setBhPdfRodape] = useState('PARA GOZAR HORAS, SEMPRE QUE POSSÍVEL SAIR MAIS CEDO E APONTAR')
 
   // -- Geracao automatica de horarios
   const [showGerarModal, setShowGerarModal] = useState(false)
@@ -970,6 +971,99 @@ export default function App() {
     doc.setFontSize(7.5)
     doc.text('Legenda: F=Folga  Fér=Férias  B=Baixa Médica  G=Gozar Horas  OL=Outro Estabelecimento', 14, finalY + 7)
     doc.save(`horario_${selectedCompany.name.replace(/[^a-zA-Z0-9]/g,'_')}_${monthLabel.replace(' ','_')}.pdf`)
+  }
+
+  async function exportarBHPDF() {
+    const { default: JsPDF } = await import('jspdf')
+    const { default: autoTable } = await import('jspdf-autotable')
+    const { year, month } = parseYearMonth(horarioYearMonth)
+    const monthLabel = `${MONTH_NAMES[month-1].toUpperCase()} ${year}`
+    const doc = new JsPDF({ orientation:'landscape', unit:'mm', format:'a4' })
+    const pageW = doc.internal.pageSize.getWidth()
+
+    // Título centrado e a negrito
+    doc.setFontSize(15); doc.setFont('helvetica','bold')
+    doc.text(`BANCO DE HORAS — ${monthLabel}`, pageW/2, 16, { align:'center' })
+    doc.setFontSize(9); doc.setFont('helvetica','normal')
+    doc.setTextColor(100)
+    doc.text(selectedCompany.name, pageW/2, 23, { align:'center' })
+    doc.setTextColor(0)
+
+    // Construir dados agrupados por departamento
+    const bhRows = ativos.map(colab => {
+      const movs = bancoHorasMovimentos[selectedCompany.email]?.[colab.id] ?? []
+      const totals = computeBHTotals(colab.id, selectedCompany.email, horarioYearMonth, horarioData, movs.filter(m=>m.tipo==='manual'))
+      const obs = movs.filter(m=>m.tipo==='manual').length > 0 ? movs.filter(m=>m.tipo==='manual').slice(-1)[0]!.motivo : ''
+      return { colab, totals, obs }
+    })
+    const grupos = new Map<string, typeof bhRows>()
+    bhRows.forEach(r => {
+      const dept = r.colab.departamento?.trim() || 'Geral'
+      if (!grupos.has(dept)) grupos.set(dept, [])
+      grupos.get(dept)!.push(r)
+    })
+    const SEP = ''
+    const body: string[][] = []
+    grupos.forEach((rows, dept) => {
+      body.push([SEP+dept,'','','','',''])
+      rows.forEach(({ colab, totals, obs }) => {
+        const sH = totals.saldo/60, eH = totals.extraMesAtual/60
+        const gH = totals.horasGozadasMes/60, aH = totals.acumuladasTotal/60
+        body.push([
+          colab.nome,
+          eH>0?`+${eH.toFixed(2)}h`:'0h',
+          `${aH>=0?'+':''}${aH.toFixed(2)}h`,
+          gH>0?`${gH.toFixed(2)}h`:'0h',
+          `${sH>=0?'+':''}${sH.toFixed(2)}h`,
+          obs,
+        ])
+      })
+    })
+
+    autoTable(doc, {
+      head: [['Colaborador','H. Extra Mês','H. Extra Acumulada','Horas Gozadas','Saldo','Observações']],
+      body,
+      startY: 28,
+      styles: { fontSize:9, cellPadding:3, valign:'middle' },
+      headStyles: { fillColor:[30,58,138], textColor:255, fontStyle:'bold', fontSize:9, halign:'center' },
+      columnStyles: {
+        0: { cellWidth:62, halign:'left' },
+        1: { cellWidth:34, halign:'center' },
+        2: { cellWidth:42, halign:'center' },
+        3: { cellWidth:36, halign:'center' },
+        4: { cellWidth:30, halign:'center', fontStyle:'bold' },
+        5: { halign:'left' },
+      },
+      alternateRowStyles: { fillColor:[248,249,250] },
+      didParseCell(data) {
+        if (data.section!=='body') return
+        const firstVal = String((data.row.raw as string[])?.[0] ?? '')
+        // Linha separadora de departamento
+        if (firstVal.startsWith(SEP)) {
+          data.cell.styles.fillColor = [226,232,240]
+          data.cell.styles.fontStyle = 'bold'
+          data.cell.styles.textColor = [51,65,85]
+          data.cell.styles.fontSize = 8
+          data.cell.text = data.column.index===0 ? [firstVal.slice(1).toUpperCase()] : ['']
+          return
+        }
+        // Coluna Saldo — verde ou vermelho
+        if (data.column.index===4) {
+          const v = parseFloat(String(data.cell.raw).replace('+',''))
+          if (v>0) data.cell.styles.textColor=[22,101,52]
+          else if (v<0) data.cell.styles.textColor=[185,28,28]
+        }
+      },
+    })
+
+    // Rodapé
+    const finalY = (doc as any).lastAutoTable?.finalY ?? 180
+    doc.setFontSize(7.5); doc.setFont('helvetica','italic'); doc.setTextColor(90)
+    doc.text(
+      bhPdfRodape,
+      pageW/2, Math.min(finalY+9, doc.internal.pageSize.getHeight()-8), { align:'center' }
+    )
+    doc.save(`banco_horas_${selectedCompany.name.replace(/[^a-zA-Z0-9]/g,'_')}_${MONTH_NAMES[month-1]}_${year}.pdf`)
   }
 
   // ── Themed style helpers (computed from theme)
@@ -2354,12 +2448,23 @@ export default function App() {
               })
               return (
                 <div style={{ flex:1, display:'flex', flexDirection:'column' }}>
-                  <div style={{ display:'flex', alignItems:'center', gap:'10px', marginBottom:'1.25rem', flexWrap:'wrap' }}>
+                  <div style={{ display:'flex', alignItems:'center', gap:'10px', marginBottom:'0.75rem', flexWrap:'wrap' }}>
                     <h2 style={{ ...T.title, fontSize:'20px', margin:0 }}>Banco de Horas</h2>
                     <div style={{ flex:1 }}/>
                     <button onClick={prevMonth} style={{ width:'30px', height:'30px', background:theme.card, border:'1px solid '+theme.border, borderRadius:'7px', color:theme.text, fontSize:'14px', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>‹</button>
                     <span style={{ fontWeight:600, fontSize:'14px', color:theme.text }}>{MONTH_NAMES[parseYearMonth(horarioYearMonth).month-1]} {parseYearMonth(horarioYearMonth).year}</span>
                     <button onClick={nextMonth} style={{ width:'30px', height:'30px', background:theme.card, border:'1px solid '+theme.border, borderRadius:'7px', color:theme.text, fontSize:'14px', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>›</button>
+                    <button onClick={exportarBHPDF} style={{ ...btnMd(theme.btn, theme.btnText) }}>📄 Exportar PDF</button>
+                  </div>
+                  <div style={{ display:'flex', alignItems:'center', gap:'8px', marginBottom:'1.25rem' }}>
+                    <label style={{ fontSize:'11px', fontWeight:600, color:theme.textMuted, whiteSpace:'nowrap' as const }}>Rodapé PDF:</label>
+                    <input
+                      style={{ ...T.input, height:'32px', fontSize:'12px', flex:1 }}
+                      type="text"
+                      value={bhPdfRodape}
+                      onChange={e=>setBhPdfRodape(e.target.value)}
+                      placeholder="Mensagem de rodapé do PDF"
+                    />
                   </div>
                   {/* Ajuste manual modal */}
                   {bhAjusteTarget&&(
